@@ -1,4 +1,5 @@
 #include "ntff.h"
+
 #include <vlc_block.h>
 
 struct es_out_sys_t
@@ -14,7 +15,7 @@ static es_out_id_t *ntff_es_add(es_out_t *ntff_out, const es_format_t *format)
 	struct es_out_t *out = ntff_out->p_sys->out;
 	es_out_id_t *res = out->pf_add(out, format);
 	
-	char *fstr = (format->i_cat == VIDEO_ES) ? "video" : (format->i_cat == AUDIO_ES) ? "audio" : "unknown";
+	const char *fstr = (format->i_cat == VIDEO_ES) ? "video" : (format->i_cat == AUDIO_ES) ? "audio" : "unknown";
 	if (format->i_cat == AUDIO_ES && audio_es == NULL)
 	{
 		audio_es = res;
@@ -102,7 +103,7 @@ void ntff_register_es(demux_t *p_demux, scene_list *scenes, struct es_out_t *es)
 	es->pf_control = ntff_es_control;
 	es->pf_destroy = ntff_es_destroy;
 	
-	es->p_sys = calloc( 1, sizeof( es_out_sys_t ) );
+	es->p_sys = new es_out_sys_t();
 	es->p_sys->out = p_demux->out;
 	es->p_sys->p_demux = p_demux;
 	es->p_sys->scenes = scenes;

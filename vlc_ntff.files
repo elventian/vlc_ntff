@@ -2950,5 +2950,6 @@
 ../../Загрузки/vlc-3.0.8/src/win32/timer.c
 ../../Загрузки/vlc-3.0.8/src/win32/winsock.c
 src/ntff.h
-src/ntff_demuxer.c
+src/ntff_demuxer.cpp
 src/ntff_es.c
+src/ntff_es.cpp

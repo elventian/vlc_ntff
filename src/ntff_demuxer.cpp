@@ -18,7 +18,6 @@
 #include <vlc_block.h>
 #include <vlc_modules.h>
 #include <vlc_stream_extractor.h>
-
 #include "ntff.h"
 
 
@@ -150,14 +149,14 @@ int64_t kdenlive_time(int h, int m, int s, int ms)
 static int Open(vlc_object_t *p_this)
 {	
 	demux_t *p_demux = (demux_t *)p_this;
-	demux_sys_t *p_sys = calloc( 1, sizeof( demux_sys_t ) );
+	demux_sys_t *p_sys = new demux_sys_t();
 	p_demux->p_sys = p_sys;
 	p_demux->pf_demux = Demux;
     p_demux->pf_control = Control;
 	
 	ntff_register_es(p_demux, &p_sys->scenes, &p_sys->es);
 	
-	p_sys->scenes.need_skip_scene = false;
+	p_sys->scenes.need_skip_scene = false; 
 	p_sys->scenes.skipped_time = 0;
 	
 //#define COLOR

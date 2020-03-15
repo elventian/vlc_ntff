@@ -1,5 +1,5 @@
 LD = ld
-CC = cc
+CC = g++
 PKG_CONFIG = pkg-config
 INSTALL = install
 CFLAGS = -g -O2 -Wall -Wextra
@@ -13,11 +13,11 @@ plugindir = $(VLC_PLUGIN_DIR)/misc
  
 override CC += -std=gnu11
 override CPPFLAGS += -DPIC -I. -Isrc
-override CFLAGS += -fPIC
+override CXXFLAGS += -fPIC
 override LDFLAGS += -Wl,-no-undefined,-z,defs
  
 override CPPFLAGS += -DMODULE_STRING=\"ntff\"
-override CFLAGS += $(VLC_PLUGIN_CFLAGS)
+override CXXFLAGS += $(VLC_PLUGIN_CFLAGS)
 override LIBS += $(VLC_PLUGIN_LIBS)
  
 all: libntff_plugin.so
@@ -37,11 +37,11 @@ clean:
 
 mostlyclean: clean
  
-SOURCES = ntff_demuxer.c ntff_es.c
+SOURCES = ntff_demuxer.cpp ntff_es.cpp
  
-$(SOURCES:%.c=src/%.o): $(SOURCES:%.c=src/%.c)
+$(SOURCES:%.cpp=src/%.o): $(SOURCES:%.cpp=src/%.cpp)
  
-libntff_plugin.so: $(SOURCES:%.c=src/%.o)
+libntff_plugin.so: $(SOURCES:%.cpp=src/%.o)
 	$(CC) $(LDFLAGS) -shared -o $@ $^ $(LIBS)
  
 .PHONY: all install install-strip uninstall clean mostlyclean
