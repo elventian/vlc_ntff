@@ -130,7 +130,7 @@ static int Demux( demux_t * p_demux )
 			s->need_skip_scene = false;
 			s->cur_scene++;
 			s->skipped_time += (s->scene[s->cur_scene].begin - s->scene[s->cur_scene-1].end);
-			if (s->cur_scene != 2)
+			//if (s->cur_scene != 1)
 			{
 				demux_Control(p_sys->fdemux, DEMUX_SET_TIME, s->scene[s->cur_scene].begin, true);
 			}
@@ -189,6 +189,7 @@ static int Open(vlc_object_t *p_this)
 	double fps;
 	demux_Control(p_sys->fdemux, DEMUX_GET_FPS, &fps);
 	double frame_len = 1000000 / fps;
+	p_sys->es.p_sys->setFrameLen(frame_len);
 	
 	msg_Dbg( p_demux, "~~~~FPS = %f", frame_len);
 	//msg_Dbg( p_demux, "~~~~FPS = %f", fps);

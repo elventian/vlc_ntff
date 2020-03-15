@@ -2953,3 +2953,4 @@ src/ntff.h
 src/ntff_demuxer.cpp
 src/ntff_es.c
 src/ntff_es.cpp
+src/ntff_es.h
