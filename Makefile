@@ -37,7 +37,7 @@ clean:
 
 mostlyclean: clean
  
-SOURCES = ntff.c
+SOURCES = ntff_demuxer.c ntff_es.c
  
 $(SOURCES:%.c=src/%.o): $(SOURCES:%.c=src/%.c)
  
