@@ -19,6 +19,7 @@
 #include <vlc_modules.h>
 #include <vlc_stream_extractor.h>
 #include "ntff.h"
+#include "ntff_es.h"
 
 
 static int Open(vlc_object_t *);
@@ -129,7 +130,10 @@ static int Demux( demux_t * p_demux )
 			s->need_skip_scene = false;
 			s->cur_scene++;
 			s->skipped_time += (s->scene[s->cur_scene].begin - s->scene[s->cur_scene-1].end);
-			demux_Control(p_sys->fdemux, DEMUX_SET_TIME, s->scene[s->cur_scene].begin, true);
+			if (s->cur_scene != 2)
+			{
+				demux_Control(p_sys->fdemux, DEMUX_SET_TIME, s->scene[s->cur_scene].begin, true);
+			}
 			
 			msg_Dbg( p_demux, "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~NTFF SEEK TO START of %i (%li -> %li)", 
 				s->cur_scene, cur_time, s->scene[s->cur_scene].begin);
@@ -154,13 +158,12 @@ static int Open(vlc_object_t *p_this)
 	p_demux->pf_demux = Demux;
     p_demux->pf_control = Control;
 	
-	ntff_register_es(p_demux, &p_sys->scenes, &p_sys->es);
+	p_sys->es.p_sys = new es_out_sys_t(p_demux, &p_sys->scenes, &p_sys->es);
 	
 	p_sys->scenes.need_skip_scene = false; 
 	p_sys->scenes.skipped_time = 0;
 	
 //#define COLOR
-//#define EXPANSE
 //#define EXPANSE
 #ifdef COLOR
 	const char *mrl = "file:///home/elventian/colors-2397.mp4";
