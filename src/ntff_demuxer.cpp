@@ -20,6 +20,7 @@
 #include <vlc_stream_extractor.h>
 #include "ntff.h"
 #include "ntff_es.h"
+#include "ntff_project.h"
 
 
 static int Open(vlc_object_t *);
@@ -105,6 +106,7 @@ struct demux_sys_t
 	stream_t *stream;	
 	
 	scene_list scenes;
+	Ntff::Project *project;
 };
 
 static int Demux( demux_t * p_demux )
@@ -163,8 +165,14 @@ static int Open(vlc_object_t *p_this)
 	p_sys->scenes.need_skip_scene = false; 
 	p_sys->scenes.skipped_time = 0;
 	
+	p_sys->project = new Ntff::Project(p_this, p_demux->psz_file, p_demux->s);
+	if (!p_sys->project->isValid())
+	{
+		return VLC_EGENERIC;
+	}
+	
 //#define COLOR
-//#define EXPANSE
+#define EXPANSE
 #ifdef COLOR
 	const char *mrl = "file:///home/elventian/colors-2397.mp4";
 	const char *psz_filepath = "/home/elventian/colors-2397.mp4";
@@ -240,7 +248,8 @@ static int Open(vlc_object_t *p_this)
 
 static void Close(vlc_object_t *obj)
 {
-	(void) obj;
+	demux_t *p_demux = (demux_t *)obj;
+	delete p_demux->p_sys->project;
     /*intf_thread_t *intf = (intf_thread_t *)obj;
     intf_sys_t *sys = intf->p_sys;
  

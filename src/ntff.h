@@ -20,6 +20,4 @@ typedef struct
 	int64_t skipped_time;
 } scene_list;
 
-void ntff_register_es(demux_t *p_demux, scene_list *scenes, struct es_out_t *es);
-
 #endif
