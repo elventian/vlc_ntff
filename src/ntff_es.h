@@ -16,7 +16,10 @@ public:
 	bool isAudio(es_out_id_t *stream) const { return audio.count(stream); }
 	void setFrameLen(mtime_t len) { frameLen = len; }
 	mtime_t updateTime();
+	void resetFramesNum() { framesNum = 0; }
 	mtime_t getTime() const { return curTime; }
+	mtime_t getFrameLen() const { return frameLen; }
+	uint32_t getFramesNum() const { return framesNum; }
 	
 	struct es_out_t *out;
 	scene_list *scenes;
@@ -26,6 +29,7 @@ private:
 	std::set<es_out_id_t *> audio;
 	mtime_t frameLen;
 	mtime_t curTime;
+	uint32_t framesNum;
 };
 
 #endif //NTFF_ES_H_INCLUDED

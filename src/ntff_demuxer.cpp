@@ -128,10 +128,10 @@ static int Demux( demux_t * p_demux )
 		else 
 		{
 			s->need_skip_scene = false;
-			s->cur_scene++;
-			s->skipped_time += (s->scene[s->cur_scene].begin - s->scene[s->cur_scene-1].end);
 			//if (s->cur_scene != 1)
 			{
+				s->cur_scene++;
+				s->skipped_time += (s->scene[s->cur_scene].begin - s->scene[s->cur_scene-1].end);
 				demux_Control(p_sys->fdemux, DEMUX_SET_TIME, s->scene[s->cur_scene].begin, true);
 			}
 			
@@ -191,7 +191,7 @@ static int Open(vlc_object_t *p_this)
 	double frame_len = 1000000 / fps;
 	p_sys->es.p_sys->setFrameLen(frame_len);
 	
-	msg_Dbg( p_demux, "~~~~FPS = %f", frame_len);
+	msg_Dbg( p_demux, "~~~~FPS = %f", fps);
 	//msg_Dbg( p_demux, "~~~~FPS = %f", fps);
 	
 	p_sys->scenes.scenes_num = 3;
@@ -206,15 +206,14 @@ static int Open(vlc_object_t *p_this)
 	s[2].end   = s[2].begin + kdenlive_time(0, 0, 0, 959) + frame_len;
 #else	
 #ifdef EXPANSE
-	s[0].begin = kdenlive_time(0, 8, 49, 40);
-	s[0].end   = s[0].begin + kdenlive_time(0, 0, 3, 360) + frame_len;
-	s[1].begin = s[0].end   + kdenlive_time(0, 2, 16, 400);
-	s[1].end   = s[1].begin + kdenlive_time(0, 0, 6, 80) + frame_len;
-	s[2].begin = s[1].end   + kdenlive_time(0, 28, 33, 920);
-	s[2].end   = s[2].begin + kdenlive_time(0, 0, 3, 360) + frame_len;
+	s[0].begin = kdenlive_time(0, 8, 49, 49);
+	s[0].end   = s[0].begin + kdenlive_time(0, 0, 3, 378) + frame_len;
+	s[1].begin = s[0].end   + kdenlive_time(0, 2, 16, 391);
+	s[1].end   = s[1].begin + kdenlive_time(0, 0, 6, 89) + frame_len;
+	s[2].begin = s[1].end   + kdenlive_time(0, 28, 34, 34);
+	s[2].end   = s[2].begin + kdenlive_time(0, 0, 3, 253) + frame_len;
 	
-	//s[1].end   += 19 * frame_len;
-	msg_Dbg( p_demux, "~~~~scene end = %li", s[1].end);
+	//s[1].end   += 4 * frame_len;
 #else	
 	s[0].begin = kdenlive_time(0, 11, 14, 400);
 	s[0].end   = s[0].begin + kdenlive_time(0, 0, 2, 880) + frame_len;
@@ -226,6 +225,11 @@ static int Open(vlc_object_t *p_this)
 #endif	
 #endif	
 	demux_Control(p_sys->fdemux, DEMUX_SET_TIME, s[0].begin, true);
+	
+	for (int i = 0; i < p_sys->scenes.scenes_num; i++)
+	{
+		msg_Dbg( p_demux, "~~~~frames in scene = %li", (long int)((s[i].end - s[i].begin) / frame_len));
+	}
 	
    /*int dres = vlc_dialog_wait_question(p_this, VLC_DIALOG_QUESTION_NORMAL, "cancel", "psz_action1",
    "psz_action2", "psz_title", "");*/

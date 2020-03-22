@@ -32,8 +32,7 @@ static int ntff_es_send(es_out_t *ntff_out, es_out_id_t *id, block_t *block)
 		
 	}
 	
-	static int frames_num = 0;
-	if (cur_time < s->scene[s->cur_scene].begin)
+	if (cur_time < s->scene[s->cur_scene].begin || cur_time > s->scene[s->cur_scene].end)
 	{
 		block->i_flags |= BLOCK_FLAG_PREROLL;
 		if (es->isAudio(id))
@@ -42,22 +41,14 @@ static int ntff_es_send(es_out_t *ntff_out, es_out_id_t *id, block_t *block)
 		}
 	}
 	
-	if (cur_time > s->scene[s->cur_scene].end)
-	{
-		s->need_skip_scene = true;
-		msg_Dbg( es->p_demux, "~~~~~~~~~~ntff_es_send SKIP at %li, frames = %i", cur_time, frames_num);
-		frames_num = 0;
-		
-		return VLC_SUCCESS;
-	}
 	
-	
-	if (es->isVideo(id))
+	/*if (es->isVideo(id))
 	{
 		bool preroll = (block->i_flags & BLOCK_FLAG_PREROLL) != 0;
 		static mtime_t prev_dts = 0;
-		msg_Dbg( es->p_demux, "~~~~~~~~~~ES_SEND_BLOCK_VIDEO: i_pts = %li, i_dts = %li, diff_dts = %li %s", 
-			block->i_pts, block->i_dts, block->i_dts - prev_dts, preroll ? " ===== PREROLL" : "");
+		msg_Dbg( es->p_demux, "~~~~~~~~~~ES_SEND_BLOCK_VIDEO: i_pts = %li, i_dts = %li, diff_dts = %li %s frame = %li", 
+			block->i_pts, block->i_dts, block->i_dts - prev_dts, preroll ? " ===== PREROLL" : "",
+			(long int )(block->i_pts / es->getFrameLen()));
 		prev_dts = block->i_dts;
 		if (!preroll) frames_num++;
 	}
@@ -67,7 +58,8 @@ static int ntff_es_send(es_out_t *ntff_out, es_out_id_t *id, block_t *block)
 		msg_Dbg( es->p_demux, "~~~~~~~~~~ES_SEND_BLOCK_AUDIO: i_pts = %li, i_dts = %li, diff_dts = %li", 
 			block->i_pts, block->i_dts, block->i_dts - prev_dts);
 		prev_dts = block->i_dts;
-	}
+		//if (s->cur_scene == 1) return VLC_SUCCESS;
+	}*/
 	
 	
 	if (es->isVideo(id))
@@ -79,14 +71,24 @@ static int ntff_es_send(es_out_t *ntff_out, es_out_id_t *id, block_t *block)
 		{
 			mtime_t t = es->updateTime();
 			es_out_Control(es->out, ES_OUT_SET_PCR, t);
-			//msg_Dbg( es->p_demux, "~~~~~~~~~~UPDATE TIME = %li", t);
+			
+			uint32_t framesInScene = (s->scene[s->cur_scene].end - s->scene[s->cur_scene].begin) / 
+				es->getFrameLen();
+			
+			if (es->getFramesNum() == framesInScene)
+			{
+				s->need_skip_scene = true;
+				msg_Dbg( es->p_demux, "~~~~~~~~~~ntff_es_send SKIP at %li, scene_end = %li, frames = %i", 
+					cur_time, s->scene[s->cur_scene].end, es->getFramesNum());
+				es->resetFramesNum();
+			}
 		}
 	}
 	else if (es->isAudio(id))
 	{
 		block->i_dts = es->getTime();
 		block->i_pts = es->getTime();
-	}	
+	}
 	
 	struct es_out_t *out = es->out;
 	return out->pf_send(out, id, block);
@@ -139,10 +141,12 @@ es_out_sys_t::es_out_sys_t(demux_t *p_demux, scene_list *scenes, struct es_out_t
 	es->pf_destroy = ntff_es_destroy;
 	
 	curTime = 0;
+	framesNum = 0;
 }
 
 mtime_t es_out_sys_t::updateTime()
 {
+	framesNum++;
 	curTime += frameLen;
 	return curTime;
 }
