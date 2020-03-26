@@ -1,6 +1,7 @@
 #ifndef NTFF_PROJECT_H
 #define NTFF_PROJECT_H
 
+#include <string>
 struct stream_t;
 struct vlc_object_t;
 struct xml_reader_t;
@@ -12,7 +13,7 @@ class Project
 	public:
 		Project(vlc_object_t *obj, const char *file, stream_t *stream);
 		bool isValid() const { return valid; }
-		static int nextSibling(xml_reader_t *reader, const char **resNode, int curType);
+		static int nextSibling(xml_reader_t *reader, const std::string &curNode, bool curEmpty, std::string &resNode);
 	private:
 		vlc_object_t *obj;
 		bool valid;

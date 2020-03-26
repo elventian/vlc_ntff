@@ -1,6 +1,6 @@
 #include "ntff_project.h"
-#include <string>
 #include <list>
+#include <sstream>
 #include <vlc_common.h>
 #include <vlc_xml.h>
 
@@ -14,8 +14,10 @@ private:
 	 std::string id;
 	 bool hasProducer;
 	 void skipToEnd(xml_reader_t *reader) const;
+	 mtime_t parseTime(const char *time) const;
 };
 
+vlc_object_t *print_obj;
 Playlist::Playlist(xml_reader_t *reader)
 {
 	hasProducer = false;
@@ -26,44 +28,75 @@ Playlist::Playlist(xml_reader_t *reader)
 	xml_ReaderNextAttr(reader, &value);
 	id = std::string(value); 
 	
-	if (id == "main_bin") { return; }
+	if (id == "main_bin") { skipToEnd(reader); return; }
+	//if (id == "playlist0") { return; }
 	
-	return;
-	const char *node;
-	int type = xml_ReaderNextNode(reader, &node);
+	const char *nodeC;
+	int type = xml_ReaderNextNode(reader, &nodeC);
+	bool empty = xml_ReaderIsEmptyElement(reader);
+	
+	msg_Dbg(print_obj, "~~~~~~Project playlist: id = %s, type = %i, node = %s, empty = %i", 
+		id.c_str(), type, nodeC, empty);
+	
+	std::string node(nodeC);
+	if (node != "blank" && node != "entry")
+	{
+		skipToEnd(reader);
+		return;
+	}
+	
 	do
 	{
-		if (std::string(node) == "blank")
+		if (node == "blank")
 		{
+			const char *length;
 			
-		}
-		else if (std::string(node) == "entry")
-		{
+			xml_ReaderNextAttr(reader, &length);
+			parseTime(length);
 			
+			/*type = Project::nextSibling(reader, node, xml_ReaderIsEmptyElement(reader), node);
+			msg_Dbg(print_obj, "~~~~~~Project playlist: id = %s, type = %i, node = %s, empty = %i", 
+				id.c_str(), type, node.c_str(), xml_ReaderIsEmptyElement(reader));
+			return;*/
 		}
-		else 
+		else if (node == "entry")
 		{
-			skipToEnd(reader);
-			return;
+			//skipToEnd(reader);
+			//return;
 		}
 		
-		type = Project::nextSibling(reader, &node, type);
+		type = Project::nextSibling(reader, node, empty, node);
+		empty = xml_ReaderIsEmptyElement(reader);
+		
+		msg_Dbg(print_obj, "~~~~~~Project playlist: id = %s, type = %i, node = %s, empty = %i", 
+			id.c_str(), type, node.c_str(), xml_ReaderIsEmptyElement(reader));
 	}
-	while (type != XML_READER_ENDELEM && std::string(node) != "playlist");
+	while (!(type == XML_READER_ENDELEM && node == "playlist"));
 }
 
 void Playlist::skipToEnd(xml_reader_t *reader) const
 {
 	const char *node;
-	int type = XML_READER_NONE;
-	while (type != XML_READER_ENDELEM && std::string(node) != "playlist")
+	int type;
+	while (true)
 	{
-		xml_ReaderNextNode(reader, &node);
+		type = xml_ReaderNextNode(reader, &node);
+		msg_Dbg(print_obj, "~~~~~~~~Project skip:     type = %i, node = %s, empty = %i", 
+			type, node, xml_ReaderIsEmptyElement(reader));
+		if (type == XML_READER_ENDELEM && std::string(node) == "playlist") { return; }
 	}
+}
+
+mtime_t Playlist::parseTime(const char *time) const
+{
+	std::istringstream iss(time);
+	msg_Dbg(print_obj, "~~~~~~~~Project parseTime: %s, %li", time, 42l);
+	return 0;
 }
 
 Project::Project(vlc_object_t *obj, const char *file, stream_t *stream): obj(obj)
 {
+	print_obj = obj;
 	valid = false;
 	std::string filename(file);
 	
@@ -77,26 +110,31 @@ Project::Project(vlc_object_t *obj, const char *file, stream_t *stream): obj(obj
 	int i = 2;
 	
 	
-	const char *node;
+	const char *nodeC;
 	int type;
 	while (i--)
 	{
 		
-		type = xml_ReaderNextNode(reader, &node);
+		type = xml_ReaderNextNode(reader, &nodeC);
 	}
 	
+	std::string node(nodeC);
 	std::list<Playlist *>playlists;
-	while (type != XML_READER_ENDELEM)
+	while (!(type == XML_READER_ENDELEM && node == "mlt"))
 	{
-		type = nextSibling(reader, &node, type);
+		type = nextSibling(reader, node, xml_ReaderIsEmptyElement(reader), node);
+		
 		bool isEmpty = xml_ReaderIsEmptyElement(reader);
 		msg_Dbg(obj, "~~~~Project type = %i, node = %s, empty = %i", 
-			type, node, isEmpty);
+			type, node.c_str(), isEmpty);
 		
-		if (std::string(node) == "playlist")
+		if (node == "playlist")
 		{
 			playlists.push_back(new Playlist(reader));
+			type = XML_READER_ENDELEM;
 		}
+		
+		if (playlists.size() == 4) break;
 	}
 	
 	/*
@@ -117,9 +155,24 @@ Project::Project(vlc_object_t *obj, const char *file, stream_t *stream): obj(obj
 	//valid = true;
 }
 
-int Project::nextSibling(xml_reader_t *reader, const char **resNode, int curType)
+int Project::nextSibling(xml_reader_t *reader, const std::string &curNode, bool curEmpty, std::string &resNode)
 {
-	if (curType == XML_READER_STARTELEM && !xml_ReaderIsEmptyElement(reader))
+	const char *node;
+	int type;
+	if (!curEmpty)
+	{
+		do
+		{
+			type = xml_ReaderNextNode(reader, &node);
+		}
+		while (!(type == XML_READER_ENDELEM && std::string(node) == curNode));
+	}
+	
+	type = xml_ReaderNextNode(reader, &node);
+	resNode = std::string(node);
+	return type;
+	
+	/*if (curType == XML_READER_STARTELEM && !curEmpty)
 	{
 		int startNum = 1, endNum = 0;
 		while (startNum > endNum)
@@ -133,7 +186,7 @@ int Project::nextSibling(xml_reader_t *reader, const char **resNode, int curType
 		}
 	}
 	
-	return xml_ReaderNextNode(reader, resNode);
+	return xml_ReaderNextNode(reader, resNode);*/
 }
 
 

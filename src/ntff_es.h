@@ -22,8 +22,8 @@ public:
 	uint32_t getFramesNum() const { return framesNum; }
 	
 	struct es_out_t *out;
-	scene_list *scenes;
 	demux_t *p_demux;
+	scene_list *scenes;
 private:
 	std::set<es_out_id_t *> video;
 	std::set<es_out_id_t *> audio;
