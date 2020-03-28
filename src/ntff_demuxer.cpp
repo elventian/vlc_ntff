@@ -166,10 +166,9 @@ static int Open(vlc_object_t *p_this)
 	p_sys->scenes.skipped_time = 0;
 	
 	p_sys->project = new Ntff::Project(p_this, p_demux->psz_file, p_demux->s);
-	if (!p_sys->project->isValid())
-	{
-		return VLC_EGENERIC;
-	}
+	if (!p_sys->project->isValid()) { return VLC_EGENERIC; }
+	
+	return VLC_EGENERIC;
 	
 //#define COLOR
 #define EXPANSE

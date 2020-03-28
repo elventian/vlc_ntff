@@ -26,7 +26,7 @@ class  Playlist
 {
 	friend std::ostream &operator<<(std::ostream &out, Playlist const &playlist);
 public:
-	 Playlist(xml_reader_t *reader);
+	 Playlist(xml_reader_t *reader, float frameLen);
 	 bool isEmpty() { return entries.empty(); }
 	 void bindProducers(const std::list<Producer *>&producers);
 	 bool isFeature() const { return feature; }
@@ -82,7 +82,7 @@ std::ostream &operator<<(std::ostream &out, Producer const &producer)
 }
 
 vlc_object_t *print_obj;
-Playlist::Playlist(xml_reader_t *reader)
+Playlist::Playlist(xml_reader_t *reader, float frameLen)
 {
 	if (xml_ReaderIsEmptyElement(reader)) { return; }
 	
@@ -125,10 +125,10 @@ Playlist::Playlist(xml_reader_t *reader)
 			xml_ReaderNextAttr(reader, &out);
 			
 			mtime_t beginTime = prevEndTime;
-			mtime_t endTime = prevEndTime + parseTime(out);
+			mtime_t endTime = prevEndTime + parseTime(out) + frameLen;
+			prevEndTime = endTime;
 			
 			entries.push_back(Entry(beginTime, endTime, producer));
-			prevEndTime = endTime;
 		}
 		
 		type = Project::nextSibling(reader, node, empty, node);
@@ -231,38 +231,47 @@ Project::Project(vlc_object_t *obj, const char *file, stream_t *stream): obj(obj
 {
 	print_obj = obj;
 	valid = false;
+	mainPlaylist = nullptr;
 	std::string filename(file);
 	
 	std::size_t found = filename.find(".kdenlive");
 	if (found == std::string::npos) return;
 	
-	
 	xml_reader_t *reader = xml_ReaderCreate(obj, stream);
 	if (!reader) return;
 	
-	int i = 2;
-	
-	
 	const char *nodeC;
 	int type;
-	while (i--)
+	std::string node;
+	do
 	{
-		
 		type = xml_ReaderNextNode(reader, &nodeC);
+		node = std::string(nodeC);
 	}
+	while (node != "profile");
+	bool isEmpty = xml_ReaderIsEmptyElement(reader);
 	
-	std::string node(nodeC);
+	const char *value, *attr;
+	int frame_rate_num = 0;
+	int frame_rate_den = 1;
+	while ((attr = xml_ReaderNextAttr(reader, &value)) != NULL)
+	{
+		if (std::string(attr) == "frame_rate_num") { frame_rate_num = atoi(value); }
+		else if (std::string(attr) == "frame_rate_den") { frame_rate_den = atoi(value); }
+	}
+	fps = (float)frame_rate_num / frame_rate_den;
+	
 	while (!(type == XML_READER_ENDELEM && node == "mlt"))
 	{
-		type = nextSibling(reader, node, xml_ReaderIsEmptyElement(reader) || type == XML_READER_ENDELEM, node);
+		type = nextSibling(reader, node, isEmpty || type == XML_READER_ENDELEM, node);
 		
-		bool isEmpty = xml_ReaderIsEmptyElement(reader);
+		isEmpty = xml_ReaderIsEmptyElement(reader);
 		msg_Dbg(obj, "~~~~Project type = %i, node = %s, empty = %i", 
 			type, node.c_str(), isEmpty);
 		
 		if (node == "playlist")
 		{
-			Playlist *p = new Playlist(reader);
+			Playlist *p = new Playlist(reader, getFrameLen());
 			if (!p->isEmpty())
 			{
 				playlists.push_back(p);
@@ -278,9 +287,14 @@ Project::Project(vlc_object_t *obj, const char *file, stream_t *stream): obj(obj
 		}
 	}
 	
-	updatePlaylistEntries();
+	valid = bindProducers();
+	if (!valid) return;
+	
 	
 	std::stringstream ss;
+	ss << std::endl;
+	ss << "~~~~" << getFrameLen() << std::endl;
+	ss << *mainPlaylist;
 	for (Playlist *p: playlists)
 	{
 		ss << *p;
@@ -294,7 +308,6 @@ Project::Project(vlc_object_t *obj, const char *file, stream_t *stream): obj(obj
 	msg_Dbg(obj, "%s", ss.str().c_str());
 	
 	xml_ReaderDelete(reader);
-	//valid = true;
 }
 
 int Project::nextSibling(xml_reader_t *reader, const std::string &curNode, bool curEmpty, std::string &resNode)
@@ -315,14 +328,30 @@ int Project::nextSibling(xml_reader_t *reader, const std::string &curNode, bool 
 	return type;
 }
 
-void Project::updatePlaylistEntries()
+bool Project::bindProducers()
 {
 	for (Playlist *p: playlists)
 	{
 		p->bindProducers(producers);
-		if (!p->isFeature()) { main = p; }
+		if (!p->isFeature()) 
+		{ 
+			if (mainPlaylist != nullptr)
+			{
+				msg_Err(obj, "Multiple main playlists");
+				return false;
+			}
+			mainPlaylist = p; 
+		}
 	}
-	playlists.remove(main);
+	playlists.remove(mainPlaylist);
+	
+	if (mainPlaylist == nullptr)
+	{
+		msg_Err(obj, "Main playlist not found");
+		return false;
+	}
+	
+	return true;
 }
 
 

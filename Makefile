@@ -2,7 +2,7 @@ LD = ld
 CC = g++
 PKG_CONFIG = pkg-config
 INSTALL = install
-CXXFLAGS = -g -O2 -Wall -Wextra -std=c++11
+CXXFLAGS = -g -O2 -Wall -Wextra -std=c++1z
 LDFLAGS =
 LIBS =
 VLC_PLUGIN_CFLAGS := $(shell $(PKG_CONFIG) --cflags vlc-plugin)
