@@ -11,11 +11,15 @@ class Entry
 {
 	friend std::ostream &operator<<(std::ostream &out, Entry const &entry);
 public:
-	Entry(mtime_t in, mtime_t out, const char *producer): in(in), out(out), producer(producer) {}
+	Entry(mtime_t in, mtime_t out, const char *producer): 
+		in(in), out(out), producer(producer), producerPtr(nullptr) {}
+	const std::string &getProducerName() const { return producer; }
+	void setProducer(Producer *producer) { producerPtr = producer; }
 private:
 	mtime_t in;
 	mtime_t out;
 	std::string producer;
+	Producer *producerPtr;
 };
 
 class  Playlist
@@ -24,11 +28,27 @@ class  Playlist
 public:
 	 Playlist(xml_reader_t *reader);
 	 bool isEmpty() { return entries.empty(); }
+	 void bindProducers(const std::list<Producer *>&producers);
+	 bool isFeature() const { return feature; }
 private:
 	 std::string id;
 	 std::list<Entry> entries;
+	 bool feature;
 	 void skipToEnd(xml_reader_t *reader) const;
 	 mtime_t parseTime(const char *time) const;
+};
+
+class Producer
+{
+	friend std::ostream &operator<<(std::ostream &out, Producer const &producer);
+public:
+	 Producer(xml_reader_t *reader);
+	 bool isFeature() const { return feature; }
+	 const std::string &getName() const { return id; }
+private:
+	 std::string id;
+	 std::string resource;
+	 bool feature;
 };
 
 std::ostream &operator<<(std::ostream &out, Entry const &entry) 
@@ -52,6 +72,12 @@ std::ostream &operator<<(std::ostream &out, Playlist const &playlist)
     {
 		out << "~~~~~~~" << e << std::endl;
 	}
+	return out;
+}
+
+std::ostream &operator<<(std::ostream &out, Producer const &producer) 
+{
+	out << "~~~~~" << producer.id << ", " << producer.resource;
 	return out;
 }
 
@@ -114,6 +140,23 @@ Playlist::Playlist(xml_reader_t *reader)
 	while (!(type == XML_READER_ENDELEM && node == "playlist"));
 }
 
+void Playlist::bindProducers(const std::list<Producer *> &producers)
+{
+	feature = false;
+	for (Entry &e: entries)
+	{
+		for (Producer *p: producers)
+		{
+			if (p->getName() == e.getProducerName())
+			{
+				e.setProducer(p);
+				if (p->isFeature()) { feature = true; }
+				break;
+			}
+		}
+	}
+}
+
 void Playlist::skipToEnd(xml_reader_t *reader) const
 {
 	const char *node;
@@ -133,6 +176,55 @@ mtime_t Playlist::parseTime(const char *time) const
 	int num = sscanf(time, "%d:%d:%d.%d", &hours, &min, &sec, &msec);
 	if (num != 4) return 0;
 	return ((hours * 60 * 60 + min * 60 + sec) * 1000 + msec) * 1000;
+}
+
+Producer::Producer(xml_reader_t *reader)
+{
+	feature = false;
+	if (xml_ReaderIsEmptyElement(reader)) { return; }
+	
+	const char *value, *attr;
+	while ((attr = xml_ReaderNextAttr(reader, &value)) != NULL)
+	{
+		if (std::string(attr) == "id") { id = std::string(value); break; }
+	}
+	if (id.empty()) return;
+	
+	const char *nodeC;
+	int type = xml_ReaderNextNode(reader, &nodeC);
+	bool empty = xml_ReaderIsEmptyElement(reader);
+	std::string node(nodeC);
+	
+	do
+	{
+		if (node == "property")
+		{
+			const char *pName;
+			xml_ReaderNextAttr(reader, &pName);
+			std::string property(pName);
+			
+			if (property == "resource")
+			{
+				const char *resourceC;
+				xml_ReaderNextNode(reader, &resourceC);
+				resource = std::string(resourceC);
+			}
+			else if (property == "kdenlive:clipname" && !empty)
+			{
+				const char *clipname;
+				xml_ReaderNextNode(reader, &clipname);
+				resource = std::string(clipname);
+				if (resource == "feature_binclip") { feature = true; }
+			}
+		}
+		
+		type = Project::nextSibling(reader, node, empty, node);
+		empty = xml_ReaderIsEmptyElement(reader);
+		
+		msg_Dbg(print_obj, "~~~~~~Project producer: id = %s, type = %i, node = %s, empty = %i", 
+			id.c_str(), type, node.c_str(), xml_ReaderIsEmptyElement(reader));
+	}
+	while (!(type == XML_READER_ENDELEM && node == "producer"));
 }
 
 Project::Project(vlc_object_t *obj, const char *file, stream_t *stream): obj(obj)
@@ -160,7 +252,6 @@ Project::Project(vlc_object_t *obj, const char *file, stream_t *stream): obj(obj
 	}
 	
 	std::string node(nodeC);
-	std::list<Playlist *>playlists;
 	while (!(type == XML_READER_ENDELEM && node == "mlt"))
 	{
 		type = nextSibling(reader, node, xml_ReaderIsEmptyElement(reader) || type == XML_READER_ENDELEM, node);
@@ -179,7 +270,15 @@ Project::Project(vlc_object_t *obj, const char *file, stream_t *stream): obj(obj
 			else { delete p; }
 			type = XML_READER_ENDELEM;
 		}
+		else if (node == "producer")
+		{
+			Producer *p = new Producer(reader);
+			producers.push_back(p);
+			type = XML_READER_ENDELEM;
+		}
 	}
+	
+	updatePlaylistEntries();
 	
 	std::stringstream ss;
 	for (Playlist *p: playlists)
@@ -187,21 +286,12 @@ Project::Project(vlc_object_t *obj, const char *file, stream_t *stream): obj(obj
 		ss << *p;
 	}
 	
-	msg_Dbg(obj, "%s", ss.str().c_str());
+	for (Producer *p: producers)
+	{
+		ss << *p << std::endl;
+	}
 	
-	/*
-	int type = XML_READER_NONE;
-    do
-    {
-        type = xml_ReaderNextNode(reader, &node );
-        if( type <= 0 )
-        {
-            msg_Err( p_demux, "can't read xml stream" );
-            goto end;
-        }
-    }
-    while( type != XML_READER_STARTELEM );
-	*/
+	msg_Dbg(obj, "%s", ss.str().c_str());
 	
 	xml_ReaderDelete(reader);
 	//valid = true;
@@ -223,22 +313,16 @@ int Project::nextSibling(xml_reader_t *reader, const std::string &curNode, bool 
 	type = xml_ReaderNextNode(reader, &node);
 	resNode = std::string(node);
 	return type;
-	
-	/*if (curType == XML_READER_STARTELEM && !curEmpty)
+}
+
+void Project::updatePlaylistEntries()
+{
+	for (Playlist *p: playlists)
 	{
-		int startNum = 1, endNum = 0;
-		while (startNum > endNum)
-		{
-			int nextType = xml_ReaderNextNode(reader, resNode);
-			if (nextType == XML_READER_ENDELEM)	{ endNum++;	}
-			else if (nextType == XML_READER_STARTELEM && !xml_ReaderIsEmptyElement(reader)) { startNum++; }
-			
-			//msg_Dbg(obj, "~~~~Project nextSibling type = %i, node = %s, empty = %i", 
-			//	nextType, *resNode, xml_ReaderIsEmptyElement(reader));
-		}
+		p->bindProducers(producers);
+		if (!p->isFeature()) { main = p; }
 	}
-	
-	return xml_ReaderNextNode(reader, resNode);*/
+	playlists.remove(main);
 }
 
 

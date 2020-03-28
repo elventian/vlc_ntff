@@ -2,11 +2,15 @@
 #define NTFF_PROJECT_H
 
 #include <string>
+#include <list>
 struct stream_t;
 struct vlc_object_t;
 struct xml_reader_t;
 
 namespace Ntff {
+
+class Playlist;
+class Producer;
 
 class Project
 {
@@ -17,6 +21,11 @@ class Project
 	private:
 		vlc_object_t *obj;
 		bool valid;
+		std::list<Playlist *>playlists;
+		std::list<Producer *>producers;
+		Playlist *main;
+		
+		void updatePlaylistEntries();
 };
 
 
