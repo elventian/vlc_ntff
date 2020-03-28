@@ -1,27 +1,63 @@
 #include "ntff_project.h"
 #include <list>
+#include <cstdio>
 #include <sstream>
 #include <vlc_common.h>
 #include <vlc_xml.h>
 
 namespace Ntff {
 
+class Entry
+{
+	friend std::ostream &operator<<(std::ostream &out, Entry const &entry);
+public:
+	Entry(mtime_t in, mtime_t out, const char *producer): in(in), out(out), producer(producer) {}
+private:
+	mtime_t in;
+	mtime_t out;
+	std::string producer;
+};
+
 class  Playlist
 {
+	friend std::ostream &operator<<(std::ostream &out, Playlist const &playlist);
 public:
 	 Playlist(xml_reader_t *reader);
+	 bool isEmpty() { return entries.empty(); }
 private:
 	 std::string id;
-	 bool hasProducer;
+	 std::list<Entry> entries;
 	 void skipToEnd(xml_reader_t *reader) const;
 	 mtime_t parseTime(const char *time) const;
 };
 
+std::ostream &operator<<(std::ostream &out, Entry const &entry) 
+{
+	out << entry.producer << ", in: " << entry.in << ", out: " << entry.out;
+	return out;
+}
+
+std::ostream &operator<<(std::ostream &out, Playlist const &playlist) 
+{
+	out << "~~~~~" << playlist.id;
+	if (playlist.entries.empty())
+	{
+		out << " empty" << std::endl;
+	}
+	else 
+	{
+		out << " entries:" << std::endl;
+	}
+	for (const Entry &e: playlist.entries)
+    {
+		out << "~~~~~~~" << e << std::endl;
+	}
+	return out;
+}
+
 vlc_object_t *print_obj;
 Playlist::Playlist(xml_reader_t *reader)
 {
-	hasProducer = false;
-	
 	if (xml_ReaderIsEmptyElement(reader)) { return; }
 	
 	const char *value;
@@ -29,7 +65,6 @@ Playlist::Playlist(xml_reader_t *reader)
 	id = std::string(value); 
 	
 	if (id == "main_bin") { skipToEnd(reader); return; }
-	//if (id == "playlist0") { return; }
 	
 	const char *nodeC;
 	int type = xml_ReaderNextNode(reader, &nodeC);
@@ -45,24 +80,29 @@ Playlist::Playlist(xml_reader_t *reader)
 		return;
 	}
 	
+	mtime_t prevEndTime = 0;
 	do
 	{
 		if (node == "blank")
 		{
 			const char *length;
-			
 			xml_ReaderNextAttr(reader, &length);
-			parseTime(length);
-			
-			/*type = Project::nextSibling(reader, node, xml_ReaderIsEmptyElement(reader), node);
-			msg_Dbg(print_obj, "~~~~~~Project playlist: id = %s, type = %i, node = %s, empty = %i", 
-				id.c_str(), type, node.c_str(), xml_ReaderIsEmptyElement(reader));
-			return;*/
+			prevEndTime += parseTime(length);
 		}
 		else if (node == "entry")
 		{
-			//skipToEnd(reader);
-			//return;
+			const char *producer;
+			const char *in;
+			const char *out;
+			xml_ReaderNextAttr(reader, &producer);
+			xml_ReaderNextAttr(reader, &in);
+			xml_ReaderNextAttr(reader, &out);
+			
+			mtime_t beginTime = prevEndTime;
+			mtime_t endTime = prevEndTime + parseTime(out);
+			
+			entries.push_back(Entry(beginTime, endTime, producer));
+			prevEndTime = endTime;
 		}
 		
 		type = Project::nextSibling(reader, node, empty, node);
@@ -89,9 +129,10 @@ void Playlist::skipToEnd(xml_reader_t *reader) const
 
 mtime_t Playlist::parseTime(const char *time) const
 {
-	std::istringstream iss(time);
-	msg_Dbg(print_obj, "~~~~~~~~Project parseTime: %s, %li", time, 42l);
-	return 0;
+	unsigned hours, min, sec, msec;
+	int num = sscanf(time, "%d:%d:%d.%d", &hours, &min, &sec, &msec);
+	if (num != 4) return 0;
+	return ((hours * 60 * 60 + min * 60 + sec) * 1000 + msec) * 1000;
 }
 
 Project::Project(vlc_object_t *obj, const char *file, stream_t *stream): obj(obj)
@@ -122,7 +163,7 @@ Project::Project(vlc_object_t *obj, const char *file, stream_t *stream): obj(obj
 	std::list<Playlist *>playlists;
 	while (!(type == XML_READER_ENDELEM && node == "mlt"))
 	{
-		type = nextSibling(reader, node, xml_ReaderIsEmptyElement(reader), node);
+		type = nextSibling(reader, node, xml_ReaderIsEmptyElement(reader) || type == XML_READER_ENDELEM, node);
 		
 		bool isEmpty = xml_ReaderIsEmptyElement(reader);
 		msg_Dbg(obj, "~~~~Project type = %i, node = %s, empty = %i", 
@@ -130,12 +171,23 @@ Project::Project(vlc_object_t *obj, const char *file, stream_t *stream): obj(obj
 		
 		if (node == "playlist")
 		{
-			playlists.push_back(new Playlist(reader));
+			Playlist *p = new Playlist(reader);
+			if (!p->isEmpty())
+			{
+				playlists.push_back(p);
+			}
+			else { delete p; }
 			type = XML_READER_ENDELEM;
 		}
-		
-		if (playlists.size() == 4) break;
 	}
+	
+	std::stringstream ss;
+	for (Playlist *p: playlists)
+	{
+		ss << *p;
+	}
+	
+	msg_Dbg(obj, "%s", ss.str().c_str());
 	
 	/*
 	int type = XML_READER_NONE;
