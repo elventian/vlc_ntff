@@ -2,6 +2,7 @@
 #include <list>
 #include <cstdio>
 #include <sstream>
+#include <filesystem>
 #include <vlc_common.h>
 #include <vlc_xml.h>
 
@@ -15,6 +16,7 @@ public:
 		in(in), out(out), producer(producer), producerPtr(nullptr) {}
 	const std::string &getProducerName() const { return producer; }
 	void setProducer(Producer *producer) { producerPtr = producer; }
+	bool updatePath(const std::string &parentPath);
 private:
 	mtime_t in;
 	mtime_t out;
@@ -28,8 +30,9 @@ class  Playlist
 public:
 	 Playlist(xml_reader_t *reader, float frameLen);
 	 bool isEmpty() { return entries.empty(); }
-	 void bindProducers(const std::list<Producer *>&producers);
 	 bool isFeature() const { return feature; }
+	 void bindProducers(const std::list<Producer *>&producers);
+	 bool updatePath(const std::string &parentPath);
 private:
 	 std::string id;
 	 std::list<Entry> entries;
@@ -45,6 +48,7 @@ public:
 	 Producer(xml_reader_t *reader);
 	 bool isFeature() const { return feature; }
 	 const std::string &getName() const { return id; }
+	 bool updatePath(const std::string &parentPath);
 private:
 	 std::string id;
 	 std::string resource;
@@ -95,10 +99,10 @@ Playlist::Playlist(xml_reader_t *reader, float frameLen)
 	const char *nodeC;
 	int type = xml_ReaderNextNode(reader, &nodeC);
 	bool empty = xml_ReaderIsEmptyElement(reader);
-	
+#ifdef DEBUG_PROJECT_PARSING
 	msg_Dbg(print_obj, "~~~~~~Project playlist: id = %s, type = %i, node = %s, empty = %i", 
 		id.c_str(), type, nodeC, empty);
-	
+#endif	
 	std::string node(nodeC);
 	if (node != "blank" && node != "entry")
 	{
@@ -133,9 +137,10 @@ Playlist::Playlist(xml_reader_t *reader, float frameLen)
 		
 		type = Project::nextSibling(reader, node, empty, node);
 		empty = xml_ReaderIsEmptyElement(reader);
-		
+#ifdef DEBUG_PROJECT_PARSING		
 		msg_Dbg(print_obj, "~~~~~~Project playlist: id = %s, type = %i, node = %s, empty = %i", 
 			id.c_str(), type, node.c_str(), xml_ReaderIsEmptyElement(reader));
+#endif
 	}
 	while (!(type == XML_READER_ENDELEM && node == "playlist"));
 }
@@ -157,6 +162,16 @@ void Playlist::bindProducers(const std::list<Producer *> &producers)
 	}
 }
 
+bool Playlist::updatePath(const std::string &parentPath)
+{
+	bool res = true;
+	for (Entry &e: entries)
+	{
+		res &= e.updatePath(parentPath);
+	}
+	return res;
+}
+
 void Playlist::skipToEnd(xml_reader_t *reader) const
 {
 	const char *node;
@@ -164,8 +179,10 @@ void Playlist::skipToEnd(xml_reader_t *reader) const
 	while (true)
 	{
 		type = xml_ReaderNextNode(reader, &node);
+#ifdef DEBUG_PROJECT_PARSING
 		msg_Dbg(print_obj, "~~~~~~~~Project skip:     type = %i, node = %s, empty = %i", 
 			type, node, xml_ReaderIsEmptyElement(reader));
+#endif
 		if (type == XML_READER_ENDELEM && std::string(node) == "playlist") { return; }
 	}
 }
@@ -220,11 +237,39 @@ Producer::Producer(xml_reader_t *reader)
 		
 		type = Project::nextSibling(reader, node, empty, node);
 		empty = xml_ReaderIsEmptyElement(reader);
-		
+#ifdef DEBUG_PROJECT_PARSING		
 		msg_Dbg(print_obj, "~~~~~~Project producer: id = %s, type = %i, node = %s, empty = %i", 
 			id.c_str(), type, node.c_str(), xml_ReaderIsEmptyElement(reader));
+#endif
 	}
 	while (!(type == XML_READER_ENDELEM && node == "producer"));
+}
+
+bool Producer::updatePath(const std::string &parentPath)
+{
+	std::filesystem::path resourcePath(resource);
+	
+	resource = parentPath/resourcePath.filename();
+	if (FILE *file = fopen(resource.c_str(), "r")) 
+	{
+		fclose(file);
+		return true;
+	}
+	
+	std::filesystem::path resDirectory;
+	for(const std::filesystem::path &e: resourcePath.parent_path())
+	{
+		resDirectory = e;
+	}
+	
+	resource = parentPath/resDirectory/resourcePath.filename();
+	if (FILE *file = fopen(resource.c_str(), "r")) 
+	{
+		fclose(file);
+		return true;
+	}
+	
+	return false;
 }
 
 Project::Project(vlc_object_t *obj, const char *file, stream_t *stream): obj(obj)
@@ -232,10 +277,8 @@ Project::Project(vlc_object_t *obj, const char *file, stream_t *stream): obj(obj
 	print_obj = obj;
 	valid = false;
 	mainPlaylist = nullptr;
-	std::string filename(file);
-	
-	std::size_t found = filename.find(".kdenlive");
-	if (found == std::string::npos) return;
+
+	if (std::filesystem::path(file).extension() != ".kdenlive") return;
 	
 	xml_reader_t *reader = xml_ReaderCreate(obj, stream);
 	if (!reader) return;
@@ -266,8 +309,10 @@ Project::Project(vlc_object_t *obj, const char *file, stream_t *stream): obj(obj
 		type = nextSibling(reader, node, isEmpty || type == XML_READER_ENDELEM, node);
 		
 		isEmpty = xml_ReaderIsEmptyElement(reader);
+#ifdef DEBUG_PROJECT_PARSING
 		msg_Dbg(obj, "~~~~Project type = %i, node = %s, empty = %i", 
 			type, node.c_str(), isEmpty);
+#endif
 		
 		if (node == "playlist")
 		{
@@ -289,6 +334,8 @@ Project::Project(vlc_object_t *obj, const char *file, stream_t *stream): obj(obj
 	
 	valid = bindProducers();
 	if (!valid) return;
+	
+	mainPlaylist->updatePath(std::filesystem::path(file).parent_path());
 	
 	
 	std::stringstream ss;
@@ -352,6 +399,11 @@ bool Project::bindProducers()
 	}
 	
 	return true;
+}
+
+bool Entry::updatePath(const std::string &parentPath) 
+{ 
+	return producerPtr->updatePath(parentPath);
 }
 
 
