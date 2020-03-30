@@ -1,4 +1,5 @@
 #include "ntff_project.h"
+#include "ntff_feature.h"
 #include <list>
 #include <cstdio>
 #include <sstream>
@@ -12,14 +13,14 @@ class Entry
 {
 	friend std::ostream &operator<<(std::ostream &out, Entry const &entry);
 public:
-	Entry(mtime_t in, mtime_t out, const char *producer): 
-		in(in), out(out), producer(producer), producerPtr(nullptr) {}
+	Entry(mtime_t in, mtime_t out, int8_t intensity, const char *producer): 
+		interval(in, out, intensity), producer(producer), producerPtr(nullptr) {}
 	const std::string &getProducerName() const { return producer; }
 	void setProducer(Producer *producer) { producerPtr = producer; }
 	bool updatePath(const std::string &parentPath);
+	const Interval &getInterval() const { return interval; }
 private:
-	mtime_t in;
-	mtime_t out;
+	Interval interval;
 	std::string producer;
 	Producer *producerPtr;
 };
@@ -33,6 +34,8 @@ public:
 	 bool isFeature() const { return feature; }
 	 void bindProducers(const std::list<Producer *>&producers);
 	 bool updatePath(const std::string &parentPath);
+	 std::string getName()const {return id;}
+	 const std::list<Entry> &getEntries() const { return entries; }
 private:
 	 std::string id;
 	 std::list<Entry> entries;
@@ -55,9 +58,24 @@ private:
 	 bool feature;
 };
 
+class FeatureTrack
+{
+public:
+	FeatureTrack(xml_reader_t *reader);
+	bool isValid() const { return feature != nullptr;}
+	Feature *getFeature() const { return feature; }
+	void setPlaylist(Playlist *p) { playlist = p; }
+	const Playlist *getPlaylist() const { return playlist; }
+	const std::list<std::string> &getPlaylists() const { return playlists; }
+private:
+	Feature *feature;
+	Playlist *playlist;
+	std::list<std::string> playlists;
+};
+
 std::ostream &operator<<(std::ostream &out, Entry const &entry) 
 {
-	out << entry.producer << ", in: " << entry.in << ", out: " << entry.out;
+	out << entry.producer << ", in: " << entry.interval.in << ", out: " << entry.interval.out;
 	return out;
 }
 
@@ -99,11 +117,11 @@ Playlist::Playlist(xml_reader_t *reader, float frameLen)
 	const char *nodeC;
 	int type = xml_ReaderNextNode(reader, &nodeC);
 	bool empty = xml_ReaderIsEmptyElement(reader);
+	std::string node(nodeC);
 #ifdef DEBUG_PROJECT_PARSING
 	msg_Dbg(print_obj, "~~~~~~Project playlist: id = %s, type = %i, node = %s, empty = %i", 
 		id.c_str(), type, nodeC, empty);
 #endif	
-	std::string node(nodeC);
 	if (node != "blank" && node != "entry")
 	{
 		skipToEnd(reader);
@@ -131,8 +149,39 @@ Playlist::Playlist(xml_reader_t *reader, float frameLen)
 			mtime_t beginTime = prevEndTime;
 			mtime_t endTime = prevEndTime + parseTime(out) + frameLen;
 			prevEndTime = endTime;
+			int8_t intensity = 0;
 			
-			entries.push_back(Entry(beginTime, endTime, producer));
+			if (!empty)
+			{
+				const char *inodeC;
+				type = xml_ReaderNextNode(reader, &inodeC);
+				empty = xml_ReaderIsEmptyElement(reader);
+				std::string inode(inodeC);
+				
+#ifdef DEBUG_PROJECT_PARSING		
+		msg_Dbg(print_obj, "~~~~~~~~Project playlist: id = %s, type = %i, node = %s, empty = %i", 
+			id.c_str(), type, inode.c_str(), empty);
+#endif
+				do
+				{
+					if (inode == "property" && !empty)
+					{
+						const char *pName;
+						xml_ReaderNextAttr(reader, &pName);
+						if (std::string(pName) == "kdenlive:intensity")
+						{
+							const char *data;
+							xml_ReaderNextNode(reader, &data);
+							intensity = atoi(data);
+						}				
+					}
+					type = Project::nextSibling(reader, inode, empty, inode);
+					empty = xml_ReaderIsEmptyElement(reader);
+				} while (!(type == XML_READER_ENDELEM && inode == "entry"));
+				empty = true;
+			}
+			
+			entries.push_back(Entry(beginTime, endTime, intensity, producer));
 		}
 		
 		type = Project::nextSibling(reader, node, empty, node);
@@ -193,6 +242,85 @@ mtime_t Playlist::parseTime(const char *time) const
 	int num = sscanf(time, "%d:%d:%d.%d", &hours, &min, &sec, &msec);
 	if (num != 4) return 0;
 	return ((hours * 60 * 60 + min * 60 + sec) * 1000 + msec) * 1000;
+}
+
+FeatureTrack::FeatureTrack(xml_reader_t *reader): feature(nullptr), playlist(nullptr)
+{
+	if (xml_ReaderIsEmptyElement(reader)) { return; }
+	
+	const char *nodeC;
+	int type = xml_ReaderNextNode(reader, &nodeC);
+	bool empty = xml_ReaderIsEmptyElement(reader);
+	std::string node(nodeC);
+	
+	std::string name, description;
+	int recMin = 0, recMax = 0;
+	bool isFeature = false;
+	
+	do
+	{
+		if (node == "property" && !empty)
+		{
+			const char *pName;
+			xml_ReaderNextAttr(reader, &pName);
+			std::string property(pName);
+			
+			const char *data;
+			xml_ReaderNextNode(reader, &data);
+			
+			if (property == "kdenlive:feature_rec_min")
+			{
+				recMin = atoi(data);
+			}
+			else if (property == "kdenlive:feature_rec_max")
+			{
+				recMax = atoi(data);
+			}
+			else if (property == "kdenlive:track_name")
+			{
+				name = std::string(data);
+			}
+			else if (property == "kdenlive:feature_description")
+			{
+				description = std::string(data);
+			}
+			else if (property == "kdenlive:feature_track")
+			{
+				isFeature = true;
+			}
+			
+#ifdef DEBUG_PROJECT_PARSING		
+		msg_Dbg(print_obj, "~~~~~~Project track: property = %s, data = %s", 
+			property.c_str(), data);
+#endif
+		}
+		else if (node == "track")
+		{
+			const char *value, *attr;
+			while ((attr = xml_ReaderNextAttr(reader, &value)) != NULL)
+			{
+				if (std::string(attr) == "producer") { playlists.push_back(value); }
+			}
+		}	
+		
+#ifdef DEBUG_PROJECT_PARSING		
+		msg_Dbg(print_obj, "~~~~~~Project track: node = %s, empty = %i", 
+			node.c_str(), empty);
+#endif
+		type = Project::nextSibling(reader, node, empty, node);
+		empty = xml_ReaderIsEmptyElement(reader);
+	}
+	while (!(type == XML_READER_ENDELEM && node == "tractor"));
+	
+	if (isFeature)
+	{
+		feature  = new Feature(name, description, recMin, recMax);
+	}
+	
+#ifdef DEBUG_PROJECT_PARSING		
+		msg_Dbg(print_obj, "~~~~~~~~~~~~~~FeatureTrack: %s %s %i %i", 
+			name.c_str(), description.c_str(), recMin, recMax);
+#endif
 }
 
 Producer::Producer(xml_reader_t *reader)
@@ -330,18 +458,25 @@ Project::Project(vlc_object_t *obj, const char *file, stream_t *stream): obj(obj
 			producers.push_back(p);
 			type = XML_READER_ENDELEM;
 		}
+		else if (node == "tractor")
+		{
+			FeatureTrack *f = new FeatureTrack(reader);
+			if (f->isValid()) { tracks.push_back(f); }
+			type = XML_READER_ENDELEM;
+		}
 	}
 	
 	valid = bindProducers();
-	if (!valid) return;
-	
-	mainPlaylist->updatePath(std::filesystem::path(file).parent_path());
+	valid &= bindTracks();
+	if (mainPlaylist)
+	{
+		valid &= mainPlaylist->updatePath(std::filesystem::path(file).parent_path());
+	}
 	
 	
 	std::stringstream ss;
 	ss << std::endl;
 	ss << "~~~~" << getFrameLen() << std::endl;
-	ss << *mainPlaylist;
 	for (Playlist *p: playlists)
 	{
 		ss << *p;
@@ -355,6 +490,22 @@ Project::Project(vlc_object_t *obj, const char *file, stream_t *stream): obj(obj
 	msg_Dbg(obj, "%s", ss.str().c_str());
 	
 	xml_ReaderDelete(reader);
+}
+
+FeatureList *Project::generateFeatureList() const
+{
+	FeatureList *flist = new FeatureList();
+	
+	for (FeatureTrack *track: tracks)
+	{
+		Feature *feature = track->getFeature();
+		for (const Entry &entry: track->getPlaylist()->getEntries())
+		{
+			feature->appendInterval(entry.getInterval());
+		}
+		flist->push_back(feature);
+	}
+	return flist;
 }
 
 int Project::nextSibling(xml_reader_t *reader, const std::string &curNode, bool curEmpty, std::string &resNode)
@@ -390,7 +541,6 @@ bool Project::bindProducers()
 			mainPlaylist = p; 
 		}
 	}
-	playlists.remove(mainPlaylist);
 	
 	if (mainPlaylist == nullptr)
 	{
@@ -398,6 +548,32 @@ bool Project::bindProducers()
 		return false;
 	}
 	
+	return true;
+}
+
+bool Project::bindTracks()
+{
+	for (FeatureTrack *track: tracks)
+	{
+		bool found = false;
+		for (const std::string &playlistName: track->getPlaylists())
+		{
+			for (Playlist *playlist: playlists)
+			{
+				if (playlist->getName() == playlistName)
+				{
+					track->setPlaylist(playlist);
+					found = true;
+					break;
+				}
+			}
+		}
+		if (!found)
+		{
+			msg_Err(obj, "No playlist for feature track");
+			return false;
+		}
+	}
 	return true;
 }
 

@@ -7,6 +7,7 @@
 #define N_(str) (str)
  
 #include <stdlib.h>
+#include <sstream>
 /* VLC core API headers */
 #include <vlc_common.h>
 #include <vlc_plugin.h>
@@ -21,6 +22,7 @@
 #include "ntff.h"
 #include "ntff_es.h"
 #include "ntff_project.h"
+#include "ntff_feature.h"
 
 
 static int Open(vlc_object_t *);
@@ -106,7 +108,6 @@ struct demux_sys_t
 	stream_t *stream;	
 	
 	scene_list scenes;
-	Ntff::Project *project;
 };
 
 static int Demux( demux_t * p_demux )
@@ -165,9 +166,19 @@ static int Open(vlc_object_t *p_this)
 	p_sys->scenes.need_skip_scene = false; 
 	p_sys->scenes.skipped_time = 0;
 	
-	p_sys->project = new Ntff::Project(p_this, p_demux->psz_file, p_demux->s);
-	if (!p_sys->project->isValid()) { return VLC_EGENERIC; }
+	Ntff::Project project(p_this, p_demux->psz_file, p_demux->s);
+	if (!project.isValid()) { return VLC_EGENERIC; }
 	
+	Ntff::FeatureList *featureList = project.generateFeatureList();
+	
+	std::stringstream ss;
+	ss << "~~~~Features num: " << featureList->size() << std::endl; 
+	for (Ntff::Feature *f: *featureList)
+	{
+		ss << "~~~~~~" << *f;
+	}
+	
+	msg_Dbg(p_demux, "%s", ss.str().c_str());
 	return VLC_EGENERIC;
 	
 //#define COLOR
@@ -247,9 +258,9 @@ static int Open(vlc_object_t *p_this)
 
 static void Close(vlc_object_t *obj)
 {
-	demux_t *p_demux = (demux_t *)obj;
-	delete p_demux->p_sys->project;
-    /*intf_thread_t *intf = (intf_thread_t *)obj;
+	(void)obj;
+	/*demux_t *p_demux = (demux_t *)obj;
+    intf_thread_t *intf = (intf_thread_t *)obj;
     intf_sys_t *sys = intf->p_sys;
  
     msg_Info(intf, "Good bye!");*/
