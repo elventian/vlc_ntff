@@ -37,7 +37,7 @@ clean:
 
 mostlyclean: clean
  
-SOURCES = ntff_demuxer.cpp ntff_es.cpp ntff_project.cpp ntff_feature.cpp
+SOURCES = ntff_demuxer.cpp ntff_es.cpp ntff_project.cpp ntff_feature.cpp ntff_player.cpp
  
 $(SOURCES:%.cpp=src/%.o): $(SOURCES:%.cpp=src/%.cpp)
  

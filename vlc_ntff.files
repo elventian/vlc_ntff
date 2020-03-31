@@ -2956,5 +2956,7 @@ src/ntff_es.cpp
 src/ntff_es.h
 src/ntff_feature.cpp
 src/ntff_feature.h
+src/ntff_player.cpp
+src/ntff_player.h
 src/ntff_project.cpp
 src/ntff_project.h

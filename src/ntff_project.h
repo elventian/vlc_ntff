@@ -13,6 +13,7 @@ class Playlist;
 class Producer;
 class FeatureList;
 class FeatureTrack;
+class Player;
 
 class Project
 {
@@ -21,11 +22,13 @@ class Project
 		bool isValid() const { return valid; }
 		float getFrameLen() const { return 1000000 / fps;}
 		FeatureList *generateFeatureList() const;
+		Player *createPlayer() const;
 		
 		static int nextSibling(xml_reader_t *reader, const std::string &curNode, 
 			bool curEmpty, std::string &resNode);
+		static vlc_object_t *getVlcObj() { return obj; }
 	private:
-		vlc_object_t *obj;
+		static vlc_object_t *obj;
 		bool valid;
 		float fps;
 		std::list<Playlist *>playlists;

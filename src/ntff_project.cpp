@@ -1,5 +1,6 @@
 #include "ntff_project.h"
 #include "ntff_feature.h"
+#include "ntff_player.h"
 #include <list>
 #include <cstdio>
 #include <sstream>
@@ -8,6 +9,23 @@
 #include <vlc_xml.h>
 
 namespace Ntff {
+
+vlc_object_t *Project::obj;
+
+class Producer
+{
+	friend std::ostream &operator<<(std::ostream &out, Producer const &producer);
+public:
+	 Producer(xml_reader_t *reader);
+	 bool isFeature() const { return feature; }
+	 const std::string &getName() const { return id; }
+	 const std::string &getResource() const { return resource; }
+	 bool updatePath(const std::string &parentPath);
+private:
+	 std::string id;
+	 std::string resource;
+	 bool feature;
+};
 
 class Entry
 {
@@ -19,6 +37,7 @@ public:
 	void setProducer(Producer *producer) { producerPtr = producer; }
 	bool updatePath(const std::string &parentPath);
 	const Interval &getInterval() const { return interval; }
+	const std::string &getResource() const { return producerPtr->getResource(); }
 private:
 	Interval interval;
 	std::string producer;
@@ -42,20 +61,6 @@ private:
 	 bool feature;
 	 void skipToEnd(xml_reader_t *reader) const;
 	 mtime_t parseTime(const char *time) const;
-};
-
-class Producer
-{
-	friend std::ostream &operator<<(std::ostream &out, Producer const &producer);
-public:
-	 Producer(xml_reader_t *reader);
-	 bool isFeature() const { return feature; }
-	 const std::string &getName() const { return id; }
-	 bool updatePath(const std::string &parentPath);
-private:
-	 std::string id;
-	 std::string resource;
-	 bool feature;
 };
 
 class FeatureTrack
@@ -103,7 +108,6 @@ std::ostream &operator<<(std::ostream &out, Producer const &producer)
 	return out;
 }
 
-vlc_object_t *print_obj;
 Playlist::Playlist(xml_reader_t *reader, float frameLen)
 {
 	if (xml_ReaderIsEmptyElement(reader)) { return; }
@@ -119,7 +123,7 @@ Playlist::Playlist(xml_reader_t *reader, float frameLen)
 	bool empty = xml_ReaderIsEmptyElement(reader);
 	std::string node(nodeC);
 #ifdef DEBUG_PROJECT_PARSING
-	msg_Dbg(print_obj, "~~~~~~Project playlist: id = %s, type = %i, node = %s, empty = %i", 
+	msg_Dbg(Project::getVlcObj(), "~~~~~~Project playlist: id = %s, type = %i, node = %s, empty = %i", 
 		id.c_str(), type, nodeC, empty);
 #endif	
 	if (node != "blank" && node != "entry")
@@ -159,7 +163,7 @@ Playlist::Playlist(xml_reader_t *reader, float frameLen)
 				std::string inode(inodeC);
 				
 #ifdef DEBUG_PROJECT_PARSING		
-		msg_Dbg(print_obj, "~~~~~~~~Project playlist: id = %s, type = %i, node = %s, empty = %i", 
+		msg_Dbg(Project::getVlcObj(), "~~~~~~~~Project playlist: id = %s, type = %i, node = %s, empty = %i", 
 			id.c_str(), type, inode.c_str(), empty);
 #endif
 				do
@@ -187,7 +191,7 @@ Playlist::Playlist(xml_reader_t *reader, float frameLen)
 		type = Project::nextSibling(reader, node, empty, node);
 		empty = xml_ReaderIsEmptyElement(reader);
 #ifdef DEBUG_PROJECT_PARSING		
-		msg_Dbg(print_obj, "~~~~~~Project playlist: id = %s, type = %i, node = %s, empty = %i", 
+		msg_Dbg(Project::getVlcObj(), "~~~~~~Project playlist: id = %s, type = %i, node = %s, empty = %i", 
 			id.c_str(), type, node.c_str(), xml_ReaderIsEmptyElement(reader));
 #endif
 	}
@@ -229,7 +233,7 @@ void Playlist::skipToEnd(xml_reader_t *reader) const
 	{
 		type = xml_ReaderNextNode(reader, &node);
 #ifdef DEBUG_PROJECT_PARSING
-		msg_Dbg(print_obj, "~~~~~~~~Project skip:     type = %i, node = %s, empty = %i", 
+		msg_Dbg(Project::getVlcObj(), "~~~~~~~~Project skip:     type = %i, node = %s, empty = %i", 
 			type, node, xml_ReaderIsEmptyElement(reader));
 #endif
 		if (type == XML_READER_ENDELEM && std::string(node) == "playlist") { return; }
@@ -290,7 +294,7 @@ FeatureTrack::FeatureTrack(xml_reader_t *reader): feature(nullptr), playlist(nul
 			}
 			
 #ifdef DEBUG_PROJECT_PARSING		
-		msg_Dbg(print_obj, "~~~~~~Project track: property = %s, data = %s", 
+		msg_Dbg(Project::getVlcObj(), "~~~~~~Project track: property = %s, data = %s", 
 			property.c_str(), data);
 #endif
 		}
@@ -304,7 +308,7 @@ FeatureTrack::FeatureTrack(xml_reader_t *reader): feature(nullptr), playlist(nul
 		}	
 		
 #ifdef DEBUG_PROJECT_PARSING		
-		msg_Dbg(print_obj, "~~~~~~Project track: node = %s, empty = %i", 
+		msg_Dbg(Project::getVlcObj(), "~~~~~~Project track: node = %s, empty = %i", 
 			node.c_str(), empty);
 #endif
 		type = Project::nextSibling(reader, node, empty, node);
@@ -318,7 +322,7 @@ FeatureTrack::FeatureTrack(xml_reader_t *reader): feature(nullptr), playlist(nul
 	}
 	
 #ifdef DEBUG_PROJECT_PARSING		
-		msg_Dbg(print_obj, "~~~~~~~~~~~~~~FeatureTrack: %s %s %i %i", 
+		msg_Dbg(Project::getVlcObj(), "~~~~~~~~~~~~~~FeatureTrack: %s %s %i %i", 
 			name.c_str(), description.c_str(), recMin, recMax);
 #endif
 }
@@ -366,7 +370,7 @@ Producer::Producer(xml_reader_t *reader)
 		type = Project::nextSibling(reader, node, empty, node);
 		empty = xml_ReaderIsEmptyElement(reader);
 #ifdef DEBUG_PROJECT_PARSING		
-		msg_Dbg(print_obj, "~~~~~~Project producer: id = %s, type = %i, node = %s, empty = %i", 
+		msg_Dbg(Project::getVlcObj(), "~~~~~~Project producer: id = %s, type = %i, node = %s, empty = %i", 
 			id.c_str(), type, node.c_str(), xml_ReaderIsEmptyElement(reader));
 #endif
 	}
@@ -400,9 +404,9 @@ bool Producer::updatePath(const std::string &parentPath)
 	return false;
 }
 
-Project::Project(vlc_object_t *obj, const char *file, stream_t *stream): obj(obj)
+Project::Project(vlc_object_t *nobj, const char *file, stream_t *stream)
 {
-	print_obj = obj;
+	obj = nobj;
 	valid = false;
 	mainPlaylist = nullptr;
 
@@ -506,6 +510,16 @@ FeatureList *Project::generateFeatureList() const
 		flist->push_back(feature);
 	}
 	return flist;
+}
+
+Player *Project::createPlayer() const
+{
+	Player *player = new Player(obj);
+	for (const Entry &entry: mainPlaylist->getEntries())
+	{
+		player->addFile(entry.getInterval().in, entry.getInterval().out, entry.getResource());
+	}
+	return player;
 }
 
 int Project::nextSibling(xml_reader_t *reader, const std::string &curNode, bool curEmpty, std::string &resNode)

@@ -23,6 +23,7 @@
 #include "ntff_es.h"
 #include "ntff_project.h"
 #include "ntff_feature.h"
+#include "ntff_player.h"
 
 
 static int Open(vlc_object_t *);
@@ -170,6 +171,7 @@ static int Open(vlc_object_t *p_this)
 	if (!project.isValid()) { return VLC_EGENERIC; }
 	
 	Ntff::FeatureList *featureList = project.generateFeatureList();
+	Ntff::Player *player = project.createPlayer();
 	
 	std::stringstream ss;
 	ss << "~~~~Features num: " << featureList->size() << std::endl; 
