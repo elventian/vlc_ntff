@@ -21,7 +21,6 @@ class Project
 		Project(vlc_object_t *obj, const char *file, stream_t *stream);
 		bool isValid() const { return valid; }
 		float getFrameLen() const { return 1000000 / fps;}
-		FeatureList *generateFeatureList() const;
 		Player *createPlayer() const;
 		
 		static int nextSibling(xml_reader_t *reader, const std::string &curNode, 
@@ -38,6 +37,7 @@ class Project
 		
 		bool bindProducers();
 		bool bindTracks();
+		FeatureList *generateFeatureList() const;
 };
 
 

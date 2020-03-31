@@ -109,10 +109,14 @@ struct demux_sys_t
 	stream_t *stream;	
 	
 	scene_list scenes;
+	
+	/**** */
+	Ntff::Player *player;
 };
 
-static int Demux( demux_t * p_demux )
+static int Demux(demux_t * p_demux)
 {
+	return p_demux->p_sys->player->play();
 	//return VLC_DEMUXER_EOF;
     //msg_Dbg( p_demux, "~~~~NTFF Demux called");
 	
@@ -170,17 +174,8 @@ static int Open(vlc_object_t *p_this)
 	Ntff::Project project(p_this, p_demux->psz_file, p_demux->s);
 	if (!project.isValid()) { return VLC_EGENERIC; }
 	
-	Ntff::FeatureList *featureList = project.generateFeatureList();
-	Ntff::Player *player = project.createPlayer();
-	
-	std::stringstream ss;
-	ss << "~~~~Features num: " << featureList->size() << std::endl; 
-	for (Ntff::Feature *f: *featureList)
-	{
-		ss << "~~~~~~" << *f;
-	}
-	
-	msg_Dbg(p_demux, "%s", ss.str().c_str());
+	p_sys->player = project.createPlayer();
+	if (!p_sys->player->isValid()) { return VLC_EGENERIC; }
 	return VLC_EGENERIC;
 	
 //#define COLOR

@@ -2,31 +2,51 @@
 #define NTFF_PLAYER_H
 
 #include <string>
-#include <list>
+#include <map>
 #include <vlc_common.h>
+#include "ntff_feature.h"
 
 namespace Ntff {
+
+class OutStream;
 
 class Player
 {
 	class Item;
 public:
-	Player(vlc_object_t *obj);
-	void addFile(mtime_t in, mtime_t out, const std::string &filename);
+	Player(vlc_object_t *obj, FeatureList *featureList);
+	bool isValid() const;
+	void addFile(const Interval &interval, const std::string &filename);
+	int play();
+	
+	bool timeIsInPlayInterval(mtime_t time) const;
+	uint32_t framesInPlayInterval() const;
+	Item *getItemAt(mtime_t time);
+	const Item *getItemAt(mtime_t time) const;
 private:
-	std::list<Item> items;
 	vlc_object_t *obj;
+	FeatureList *featureList;
+	std::map<mtime_t, Item> items;
+	OutStream *out;
+	std::map<mtime_t, Interval> playIntervals;
+	std::map<mtime_t, Interval>::iterator curInterval;
+	
+	void skipToCurInterval();
 };
 
 class Player::Item
 {
 public:
-	Item(vlc_object_t *obj, mtime_t in, mtime_t out, const std::string &filename);
+	Item(){}
+	Item(vlc_object_t *obj, const Interval &interval, es_out_t *outStream, const std::string &filename);
+	bool isValid() const { return valid; }
+	double getFrameLen() const { return frameLen; }
+	void skip(mtime_t time);
 private:
-	mtime_t in;
-	mtime_t out;
+	Interval interval;
+	double frameLen;
 	stream_t *stream;
-	demux_t *fdemux;
+	demux_t *demux;
 	bool valid;
 };
 

@@ -1,31 +1,118 @@
 #include "ntff_player.h"
+#include "ntff_es.h"
+#include "ntff_feature.h"
 #include <vlc_stream_extractor.h>
 #include <vlc_demux.h>
 
 namespace Ntff {
 
-Player::Player(vlc_object_t *obj) : obj(obj)
+Player::Player(vlc_object_t *obj, FeatureList *featureList) : obj(obj), featureList(featureList)
 {
+	demux_t *demuxer = (demux_t *)obj;
+	out = new OutStream(demuxer->out, this);
+	playIntervals = featureList->formSelectedIntervals(); //TODO: split intervals in between files
+	curInterval = playIntervals.begin();
+	skipToCurInterval();
 	
+	msg_Dbg(obj, "~~~~Player Intervals: %li", playIntervals.size());
+	for (auto p: playIntervals)
+	{
+		msg_Dbg(obj, "~~~~interval: %li - %li", p.second.in, p.second.out);
+	}
 }
 
-void Player::addFile(mtime_t in, mtime_t out, const std::string &filename)
+bool Player::isValid() const
 {
-	items.push_back(Item(obj, in, out, filename));
+	if (items.empty()) return false;
+	
+	for (auto it: items)
+	{
+		if (!it.second.isValid()) return false;
+	}
+	
+	return true;
 }
 
-Player::Item::Item(vlc_object_t *obj, mtime_t in, mtime_t out, const std::string &filename):
-	in(in), out(out), valid(false)
+void Player::addFile(const Interval &interval, const std::string &filename)
 {
-	//msg_Dbg(obj, "~~~~Player::Item: %s", ("file://" + filename).c_str());
+	items[interval.in] = Item(obj, interval, out->getFakeOutStream(), filename);
+}
+
+int Player::play()
+{
+	if (framesInPlayInterval() == out->getFramesNum())
+	{
+		//Seek to next interval
+		out->resetFramesNum(); //WARNING
+	}
+}
+
+bool Player::timeIsInPlayInterval(mtime_t time) const
+{
+	if (curInterval == playIntervals.end()) return false;
 	
+	Interval &interval = (*curInterval).second;
+	return interval.contains(time);
+}
+
+uint32_t Player::framesInPlayInterval() const
+{
+	if (curInterval == playIntervals.end()) return 0;
+	
+	Interval &interval = (*curInterval).second;
+	const Player::Item *item = getItemAt(interval.in);
+	return (interval.out - interval.in) / item->getFrameLen();
+}
+
+Player::Item *Player::getItemAt(mtime_t time)
+{
+	return const_cast<Item *>(static_cast<const Player&>(*this).getItemAt(time));
+}
+
+const Player::Item *Player::getItemAt(mtime_t time) const
+{
+	auto it = items.lower_bound(time);
+	if (it == items.end()) { return nullptr; }
+	else if (it->first == time) { return &it->second; }
+	else
+	{
+		it--;
+		return &it->second;
+	}
+}
+
+void Player::skipToCurInterval()
+{
+	if (curInterval == playIntervals.end()) return;
+	
+	Interval &interval = (*curInterval).second;
+	Item *item = getItemAt(interval.in);
+	if (!item) return;
+	
+	item->skip(interval.in);
+}
+
+Player::Item::Item(vlc_object_t *obj, const Interval &interval, 
+	es_out_t *outStream, const std::string &filename):
+	interval(interval), valid(false)
+{	
 	stream = vlc_stream_NewMRL(obj, ("file://" + filename).c_str());
 	if (!stream) { return; }
 	
-	valid = true;
+	demux = demux_New(obj, "any", filename.c_str(), stream, outStream);
+	if (!demux) { return; }
 	
-	/*const char *psz_filepath = "/home/elventian/Expanse.mkv";
-	const char *psz_name = "any";*/
+	double fps;
+	demux_Control(demux, DEMUX_GET_FPS, &fps);
+	frameLen = 1000000 / fps;
+	
+	//msg_Dbg(obj, "~~~~Player::Item: frameLen = %f", frameLen);	
+	valid = true;
+}
+
+void Player::Item::skip(mtime_t time)
+{
+	demux_Control(demux, DEMUX_SET_TIME, time, true);
 }
 
 

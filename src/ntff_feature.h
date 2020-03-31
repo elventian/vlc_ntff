@@ -4,13 +4,17 @@
 
 #include <string>
 #include <vector>
+#include <map>
 #include <vlc_common.h>
 
 namespace Ntff {
 
 struct Interval
 {
+	Interval(){}
 	Interval(mtime_t in, mtime_t out, int intensity) : in(in), out(out), intensity(intensity) {}
+	bool contains(mtime_t time) const { return time >= in && time < out; }
+	
 	mtime_t in;
 	mtime_t out;
 	int8_t intensity;
@@ -22,6 +26,8 @@ class Feature
 public:
 	Feature(const std::string &name, const std::string &description, int recMin, int recMax);
 	void appendInterval(const Interval &interval);
+	const std::vector<Interval> &getIntervals() { return intervals; }
+	bool isActive(const Interval &interval) const;
 private:
 	std::string name;
 	std::string description;
@@ -32,13 +38,12 @@ private:
 	int8_t selectedMin;
 	int8_t selectedMax;
 	std::vector<Interval> intervals;
-	int curInterval;
 };
 
 class FeatureList: public std::vector<Feature *>
 {
 public:
-	
+	std::map<mtime_t, Interval> formSelectedIntervals();
 };
 
 }

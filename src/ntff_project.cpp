@@ -509,15 +509,24 @@ FeatureList *Project::generateFeatureList() const
 		}
 		flist->push_back(feature);
 	}
+	
+	std::stringstream ss;
+	ss << "~~~~Features num: " << flist->size() << std::endl; 
+	for (Ntff::Feature *f: *flist)
+	{
+		ss << "~~~~~~" << *f;
+	}
+	msg_Dbg(obj, "%s", ss.str().c_str());
+	
 	return flist;
 }
 
 Player *Project::createPlayer() const
 {
-	Player *player = new Player(obj);
+	Player *player = new Player(obj, generateFeatureList());
 	for (const Entry &entry: mainPlaylist->getEntries())
 	{
-		player->addFile(entry.getInterval().in, entry.getInterval().out, entry.getResource());
+		player->addFile(entry.getInterval(), entry.getResource());
 	}
 	return player;
 }
