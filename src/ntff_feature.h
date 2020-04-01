@@ -43,7 +43,7 @@ private:
 class FeatureList: public std::vector<Feature *>
 {
 public:
-	std::map<mtime_t, Interval> formSelectedIntervals();
+	mtime_t formSelectedIntervals(std::map<mtime_t, Interval> &res);
 };
 
 }

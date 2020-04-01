@@ -31,9 +31,9 @@ std::ostream &operator<<(std::ostream &out, const Feature &item)
 	return out;
 }
 
-std::map<mtime_t, Interval> FeatureList::formSelectedIntervals()
+mtime_t FeatureList::formSelectedIntervals(std::map<mtime_t, Interval> &res)
 {
-	std::map<mtime_t, Interval> res;
+	res.clear();
 	for (Feature *feature: *this)
 	{
 		for (const Interval& interval: feature->getIntervals())
@@ -72,7 +72,14 @@ std::map<mtime_t, Interval> FeatureList::formSelectedIntervals()
 			}
 		}
 	}
-	return res;
+	
+	mtime_t length = 0;
+	for (auto &it: res)
+	{
+		Interval &interval = it.second;
+		length += (interval.out - interval.in);
+	}
+	return length;
 }
 
 

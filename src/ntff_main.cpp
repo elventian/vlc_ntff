@@ -38,10 +38,23 @@ vlc_module_begin ()
     set_callbacks( Open, Close )
     add_shortcut( "ntff" )
 vlc_module_end ()
+
+
+struct demux_sys_t
+{
+	demux_t *fdemux;
+	struct es_out_t es;
+	stream_t *stream;	
+	
+	scene_list scenes;
+	
+	/**** */
+	Ntff::Player *player;
+};
  
 static int Control( demux_t *p_demux, int i_query, va_list args )
 {
-	(void) p_demux;
+	return p_demux->p_sys->player->control(i_query, args);
 	//msg_Dbg( p_demux, "~~~~NTFF Control called query = %i", i_query);
     
 	bool *pb_bool; 
@@ -100,19 +113,6 @@ static int Control( demux_t *p_demux, int i_query, va_list args )
         default: return VLC_EGENERIC;
     }
 }
-
-
-struct demux_sys_t
-{
-	demux_t *fdemux;
-	struct es_out_t es;
-	stream_t *stream;	
-	
-	scene_list scenes;
-	
-	/**** */
-	Ntff::Player *player;
-};
 
 static int Demux(demux_t * p_demux)
 {
@@ -176,7 +176,7 @@ static int Open(vlc_object_t *p_this)
 	
 	p_sys->player = project.createPlayer();
 	if (!p_sys->player->isValid()) { return VLC_EGENERIC; }
-	return VLC_EGENERIC;
+	return VLC_SUCCESS;
 	
 //#define COLOR
 #define EXPANSE

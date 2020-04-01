@@ -157,7 +157,7 @@ mtime_t es_out_sys_t::updateTime()
 namespace Ntff 
 {
 
-OutStream::OutStream(es_out_t *out, Player *player) : out(out), player(player)
+OutStream::OutStream(es_out_t *out, Player *player) : curTime(0), framesNum(0), out(out), player(player)
 {
 	fakeOut.p_sys = (es_out_sys_t *)this;
 	
@@ -185,6 +185,13 @@ OutStream::OutStream(es_out_t *out, Player *player) : out(out), player(player)
 	{
 		((OutStream*)out->p_sys)->destroyOutStream();
 	};
+}
+
+mtime_t OutStream::updateTime()
+{
+	framesNum++;
+	curTime += player->getFrameLen();
+	return curTime;
 }
 
 es_out_id_t *OutStream::addElemental(const es_format_t *format)
@@ -222,6 +229,7 @@ void OutStream::destroyOutStream()
 
 int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 {
+	msg_Dbg(player->getVlcObj(), "~~~~sendBlock");
 	mtime_t blockTime = (block->i_pts == 0) ? block->i_dts : block->i_pts;
 	
 	if (isVideo(streamId))
@@ -241,16 +249,7 @@ int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 			mtime_t time = updateTime();
 			es_out_Control(out, ES_OUT_SET_PCR, time);
 			
-			/*uint32_t framesInScene = (s->scene[s->cur_scene].end - s->scene[s->cur_scene].begin) / 
-				es->getFrameLen();
-			
-			if (es->getFramesNum() == player->framesInPlayInterval())
-			{
-				s->need_skip_scene = true;
-				msg_Dbg( es->p_demux, "~~~~~~~~~~ntff_es_send SKIP at %li, scene_end = %li, frames = %i", 
-					cur_time, s->scene[s->cur_scene].end, es->getFramesNum());
-				es->resetFramesNum();
-			}*/
+			msg_Dbg(player->getVlcObj(), "~~~~sendBlock blockTime %li, video, frames: %i, time: %li", blockTime, framesNum, time);
 		}
 	}
 	else
@@ -259,6 +258,9 @@ int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 		if (isAudio(streamId))
 		{
 			return VLC_SUCCESS;
+		}
+		else {
+			msg_Dbg(player->getVlcObj(), "~~~~sendBlock blockTime %li, video PREROLL, frames: %i", blockTime, framesNum);
 		}
 	}
 	

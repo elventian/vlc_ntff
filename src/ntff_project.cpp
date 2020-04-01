@@ -528,6 +528,7 @@ Player *Project::createPlayer() const
 	{
 		player->addFile(entry.getInterval(), entry.getResource());
 	}
+	player->reset();
 	return player;
 }
 

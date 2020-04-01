@@ -43,15 +43,9 @@ public:
 	
 	bool isVideo(es_out_id_t *stream) const { return video.count(stream); }
 	bool isAudio(es_out_id_t *stream) const { return audio.count(stream); }
-	mtime_t updateTime()
-	{
-		framesNum++;
-		curTime += frameLen;
-		return curTime;
-	}
+	mtime_t updateTime();
 	void resetFramesNum() { framesNum = 0; }
 	mtime_t getTime() const { return curTime; }
-	mtime_t getFrameLen() const { return frameLen; }
 	uint32_t getFramesNum() const { return framesNum; }
 	es_out_t *getFakeOutStream() { return &fakeOut; }
 	
@@ -63,7 +57,6 @@ public:
 private:
 	std::set<es_out_id_t *> video;
 	std::set<es_out_id_t *> audio;
-	mtime_t frameLen;
 	mtime_t curTime;
 	uint32_t framesNum;
 	
