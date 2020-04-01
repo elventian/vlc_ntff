@@ -47,7 +47,7 @@ public:
 	void resetFramesNum() { framesNum = 0; }
 	mtime_t getTime() const { return curTime; }
 	uint32_t getFramesNum() const { return framesNum; }
-	es_out_t *getFakeOutStream() { return &fakeOut; }
+	es_out_t *getWrapperStream() { return &wrapper; }
 	
 	es_out_id_t *addElemental(const es_format_t *format);
 	void removeElemental(es_out_id_t *id);
@@ -61,7 +61,7 @@ private:
 	uint32_t framesNum;
 	
 	es_out_t *out;
-	es_out_t fakeOut;
+	es_out_t wrapper;
 	Player *player;
 };
 

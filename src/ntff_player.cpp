@@ -26,7 +26,7 @@ bool Player::isValid() const
 
 void Player::addFile(const Interval &interval, const std::string &filename)
 {
-	items[interval.in] = Item(obj, interval, out->getFakeOutStream(), filename);
+	items[interval.in] = Item(obj, interval, out->getWrapperStream(), filename);
 }
 
 bool Player::timeIsInPlayInterval(mtime_t time) const

@@ -159,29 +159,29 @@ namespace Ntff
 
 OutStream::OutStream(es_out_t *out, Player *player) : curTime(0), framesNum(0), out(out), player(player)
 {
-	fakeOut.p_sys = (es_out_sys_t *)this;
+	wrapper.p_sys = (es_out_sys_t *)this;
 	
-	fakeOut.pf_add = [] (es_out_t *out, const es_format_t *format)
+	wrapper.pf_add = [] (es_out_t *out, const es_format_t *format)
 	{
 		return ((OutStream*)out->p_sys)->addElemental(format);
 	};
 	
-	fakeOut.pf_send = [](es_out_t *out, es_out_id_t *id, block_t *block)
+	wrapper.pf_send = [](es_out_t *out, es_out_id_t *id, block_t *block)
 	{
 		return ((OutStream*)out->p_sys)->sendBlock(id, block);
 	};
 	
-	fakeOut.pf_del = [](es_out_t *out, es_out_id_t *id)
+	wrapper.pf_del = [](es_out_t *out, es_out_id_t *id)
 	{
 		((OutStream*)out->p_sys)->removeElemental(id);
 	};
 	
-	fakeOut.pf_control = [](es_out_t *out, int i_query, va_list va)
+	wrapper.pf_control = [](es_out_t *out, int i_query, va_list va)
 	{
 		return ((OutStream*)out->p_sys)->control(i_query, va);
 	};
 	
-	fakeOut.pf_destroy = [](es_out_t *out)
+	wrapper.pf_destroy = [](es_out_t *out)
 	{
 		((OutStream*)out->p_sys)->destroyOutStream();
 	};
