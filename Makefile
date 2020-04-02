@@ -17,7 +17,7 @@ override CXXFLAGS += -fPIC
 override LDFLAGS += -Wl,-no-undefined,-z,defs
  
 override CPPFLAGS += -DMODULE_STRING=\"ntff\"
-override CXXFLAGS += $(VLC_PLUGIN_CFLAGS)
+override CXXFLAGS += $(VLC_PLUGIN_CFLAGS) -I/usr/src/vlc-3.0.8/include 
 override LIBS += $(VLC_PLUGIN_LIBS) -lstdc++fs
  
 all: libntff_plugin.so
