@@ -26,6 +26,7 @@ bool Player::isValid() const
 
 void Player::addFile(const Interval &interval, const std::string &filename)
 {
+	out->reuseStreams();
 	items[interval.in] = Item(obj, interval, out->getWrapperStream(), filename);
 }
 
@@ -34,7 +35,7 @@ bool Player::timeIsInPlayInterval(mtime_t time) const
 	if (curInterval == playIntervals.end()) return false;
 	
 	Interval &interval = (*curInterval).second;
-	return interval.contains(time);
+	return interval.contains(getCurItem()->getInterval().in + time);
 }
 
 mtime_t Player::getFrameLen() const
@@ -119,7 +120,7 @@ Player::Item::Item(vlc_object_t *obj, const Interval &interval,
 
 void Player::Item::skip(mtime_t time) const
 {
-	demux_Control(demux, DEMUX_SET_TIME, time, true);
+	demux_Control(demux, DEMUX_SET_TIME, time - interval.in, true);
 }
 
 int Player::Item::play() const
@@ -142,8 +143,9 @@ int Player::play()
 	if (!item) { return VLC_DEMUXER_EOF; }
 	else 
 	{
-		//msg_Dbg(obj, "~~~~Player play: %s", item->getName().c_str());
-		return item->play();
+		int res = item->play();
+		msg_Dbg(obj, "~~~~Player play: %s, res = %i", item->getName().c_str(), res);
+		return res;
 	}
 }
 

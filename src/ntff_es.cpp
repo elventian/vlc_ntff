@@ -196,13 +196,14 @@ mtime_t OutStream::updateTime()
 
 es_out_id_t *OutStream::addElemental(const es_format_t *format)
 {
-	es_out_id_t *res = out->pf_add(out, format);
+	EStreamType type = EStreamCollection::typeByVlcFormat(format);
+	es_out_id_t *res = streams.getNext(type);
 	
-	switch (format->i_cat)
+	if (!res)
 	{
-		case VIDEO_ES: video.insert(res); break;
-		case AUDIO_ES: audio.insert(res); break;
-		default: break;
+		res = out->pf_add(out, format);
+		streams.append(res, type);
+		//msg_Dbg(player->getVlcObj(), "~~~~addElemental %s", (type == Video ? "VIDEO" : "AUDIO"));
 	}
 	
 	return res;
@@ -215,6 +216,7 @@ void OutStream::removeElemental(es_out_id_t *id)
 
 int OutStream::control(int i_query, va_list va)
 {
+	msg_Dbg(player->getVlcObj(), "~~~~control query: %i", i_query);
 	if (i_query == ES_OUT_SET_NEXT_DISPLAY_TIME || i_query == ES_OUT_SET_PCR)
 	{
 		return VLC_SUCCESS;
@@ -229,7 +231,6 @@ void OutStream::destroyOutStream()
 
 int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 {
-	msg_Dbg(player->getVlcObj(), "~~~~sendBlock");
 	mtime_t blockTime = (block->i_pts == 0) ? block->i_dts : block->i_pts;
 	
 	if (isVideo(streamId))
@@ -249,7 +250,7 @@ int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 			mtime_t time = updateTime();
 			es_out_Control(out, ES_OUT_SET_PCR, time);
 			
-			msg_Dbg(player->getVlcObj(), "~~~~sendBlock blockTime %li, video, frames: %i, time: %li", blockTime, framesNum, time);
+			//msg_Dbg(player->getVlcObj(), "~~~~sendBlock blockTime %li, video, frames: %i, time: %li", blockTime, framesNum, time);
 		}
 	}
 	else
@@ -260,11 +261,57 @@ int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 			return VLC_SUCCESS;
 		}
 		else {
-			msg_Dbg(player->getVlcObj(), "~~~~sendBlock blockTime %li, video PREROLL, frames: %i", blockTime, framesNum);
+			//msg_Dbg(player->getVlcObj(), "~~~~sendBlock blockTime %li, video PREROLL, frames: %i", blockTime, framesNum);
 		}
 	}
 	
 	return out->pf_send(out, streamId, block);
+}
+
+void EStreamCollection::reuse()
+{
+	for (int i = 0; i < EStreamTypeNum; i++)
+	{
+		streamIt[i] = streams[i].begin();
+	}
+}
+
+es_out_id_t *EStreamCollection::getNext(EStreamType type)
+{
+	if (type == Unknown || streamIt[type] == streams[type].end()) { return nullptr; }
+	else 
+	{
+		es_out_id_t *res = *streamIt[type];
+		streamIt[type]++;
+		return res;
+	}
+}
+
+void EStreamCollection::append(es_out_id_t *id, EStreamType type)
+{
+	if (type == Unknown) return;
+	
+	streams[type].insert(id);
+	streamIt[type] = streams[type].end();
+}
+
+EStreamType EStreamCollection::getType(es_out_id_t *stream) const
+{
+	for (int i = 0; i < EStreamTypeNum; i++)
+	{
+		if (streams[i].count(stream)) { return (EStreamType)i; }
+	}
+	return Unknown;
+}
+
+EStreamType EStreamCollection::typeByVlcFormat(const es_format_t *format)
+{
+	switch (format->i_cat)
+	{
+		case VIDEO_ES: return Video;
+		case AUDIO_ES: return Audio;
+		default: return Unknown;
+	}
 }
 
 }
