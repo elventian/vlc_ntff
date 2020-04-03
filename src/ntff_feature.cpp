@@ -25,6 +25,16 @@ bool Feature::isActive(const Interval &interval) const
 	return interval.intensity >= selectedMin && interval.intensity <= selectedMax;
 }
 
+std::set<std::string> Feature::getIntervalsIntensity() const
+{
+	std::set<std::string> res;
+	for (const Interval &interval: intervals)
+	{
+		res.insert(std::to_string((int)interval.intensity));
+	}
+	return res;
+}
+
 std::ostream &operator<<(std::ostream &out, const Feature &item)
 {
 	out << item.name << ", min = " << (int)item.recMin << ", max = " << (int)item.recMax << std::endl;
@@ -80,6 +90,14 @@ mtime_t FeatureList::formSelectedIntervals(std::map<mtime_t, Interval> &res)
 		length += (interval.out - interval.in);
 	}
 	return length;
+}
+
+FeatureList::~FeatureList()
+{
+	for (Feature *feature: *this)
+	{
+		delete feature;
+	}
 }
 
 

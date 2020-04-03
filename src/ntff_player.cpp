@@ -1,6 +1,7 @@
 #include "ntff_player.h"
 #include "ntff_es.h"
 #include "ntff_feature.h"
+#include "ntff_dialog.h"
 #include <vlc_stream_extractor.h>
 #include <vlc_demux.h>
 
@@ -10,6 +11,14 @@ Player::Player(vlc_object_t *obj, FeatureList *featureList) : obj(obj), featureL
 {
 	demux_t *demuxer = (demux_t *)obj;
 	out = new OutStream(demuxer->out, this);
+	dialog = new Dialog(obj, featureList);
+}
+
+Player::~Player()
+{
+	delete featureList;
+	delete out;
+	delete dialog;
 }
 
 bool Player::isValid() const
@@ -130,6 +139,11 @@ int Player::Item::play() const
 
 int Player::play()
 {
+	if (dialog->wait())
+	{
+		reset();
+	}
+	
 	if (framesInPlayInterval() == out->getFramesNum()) //interval handled, seek to next
 	{
 		curInterval++;

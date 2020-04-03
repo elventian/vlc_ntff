@@ -37,7 +37,7 @@ clean:
 
 mostlyclean: clean
  
-SOURCES = ntff_main.cpp ntff_es.cpp ntff_project.cpp ntff_feature.cpp ntff_player.cpp
+SOURCES = ntff_main.cpp ntff_es.cpp ntff_project.cpp ntff_feature.cpp ntff_player.cpp ntff_dialog.cpp
  
 $(SOURCES:%.cpp=src/%.o): $(SOURCES:%.cpp=src/%.cpp)
  

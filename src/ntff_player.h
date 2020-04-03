@@ -9,12 +9,14 @@
 namespace Ntff {
 
 class OutStream;
+class Dialog;
 
 class Player
 {
 	class Item;
 public:
 	Player(vlc_object_t *obj, FeatureList *featureList);
+	~Player();
 	bool isValid() const;
 	void addFile(const Interval &interval, const std::string &filename);
 	int play();
@@ -32,6 +34,7 @@ private:
 	std::map<mtime_t, Interval> playIntervals;
 	std::map<mtime_t, Interval>::iterator curInterval;
 	mtime_t length;
+	Dialog *dialog;
 	
 	void skipToCurInterval();
 	const Item *getCurItem() const;

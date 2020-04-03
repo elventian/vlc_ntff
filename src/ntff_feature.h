@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <set>
 #include <vlc_common.h>
 
 namespace Ntff {
@@ -28,6 +29,11 @@ public:
 	void appendInterval(const Interval &interval);
 	const std::vector<Interval> &getIntervals() { return intervals; }
 	bool isActive(const Interval &interval) const;
+	const std::string &getName() const { return name; }
+	const std::string &getDescription() const { return description; }
+	std::set<std::string> getIntervalsIntensity() const;
+	int8_t getRecommendedMin() const { return recMin; }
+	int8_t getRecommendedMax() const { return recMax; }
 private:
 	std::string name;
 	std::string description;
@@ -44,6 +50,7 @@ class FeatureList: public std::vector<Feature *>
 {
 public:
 	mtime_t formSelectedIntervals(std::map<mtime_t, Interval> &res);
+	~FeatureList();
 };
 
 }
