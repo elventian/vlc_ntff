@@ -52,6 +52,7 @@ static int Demux(demux_t * p_demux)
 	return VLC_SUCCESS;
 }
 */
+
 static int Open(vlc_object_t *p_this)
 {	
 	demux_t *p_demux = (demux_t *)p_this;

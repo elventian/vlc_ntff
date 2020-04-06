@@ -7,7 +7,9 @@
 namespace Ntff 
 {
 
-OutStream::OutStream(es_out_t *out, Player *player) : curTime(0), framesNum(0), out(out), player(player)
+OutStream::OutStream(es_out_t *out, Player *player) : 
+	curTime(0), intervalBeginTime(0), framesNum(0), 
+	out(out), player(player)
 {
 	wrapper.p_sys = (es_out_sys_t *)this;
 	
@@ -66,7 +68,7 @@ void OutStream::removeElemental(es_out_id_t *id)
 
 int OutStream::control(int i_query, va_list va)
 {
-	msg_Dbg(player->getVlcObj(), "~~~~control query: %i", i_query);
+	//msg_Dbg(player->getVlcObj(), "~~~~control query: %i", i_query);
 	if (i_query == ES_OUT_SET_NEXT_DISPLAY_TIME || i_query == ES_OUT_SET_PCR)
 	{
 		return VLC_SUCCESS;
@@ -82,11 +84,18 @@ void OutStream::destroyOutStream()
 int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 {
 	mtime_t blockTime = (block->i_pts == 0) ? block->i_dts : block->i_pts;
+	int curFrameId = player->getFrameId(blockTime);
+	int frameInInterval = curFrameId - player->getCurIntervalFirstFrame();
 	
 	if (isVideo(streamId))
 	{
+		if (frameInInterval == 0) { intervalBeginTime = getTime(); }
+		
 		block->i_dts = getTime();
-		block->i_pts = 0;
+		if (block->i_pts != 0)
+		{
+			block->i_pts = intervalBeginTime + frameInInterval * player->getFrameLen();
+		}
 	}
 	else if (isAudio(streamId))
 	{
@@ -100,18 +109,24 @@ int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 			mtime_t time = updateTime();
 			es_out_Control(out, ES_OUT_SET_PCR, time);
 			
-			//msg_Dbg(player->getVlcObj(), "~~~~sendBlock blockTime %li, video, frames: %i, time: %li", blockTime, framesNum, time);
+			msg_Dbg(player->getVlcObj(), "~~~~~~~~~sendBlock dts %li, pts %li, blockFrame %i intervalBeginTime = %li", 
+				block->i_dts, block->i_pts, frameInInterval, intervalBeginTime);
 		}
 	}
 	else
 	{
-		block->i_flags |= BLOCK_FLAG_PREROLL;
 		if (isAudio(streamId))
 		{
 			return VLC_SUCCESS;
 		}
-		else {
-			//msg_Dbg(player->getVlcObj(), "~~~~sendBlock blockTime %li, video PREROLL, frames: %i", blockTime, framesNum);
+		else if (isVideo(streamId))
+		{
+			//block->i_dts -= player->getFrameLen();
+			//block->i_dts += frameInInterval;
+			block->i_pts = getTime() + frameInInterval;
+			block->i_flags |= BLOCK_FLAG_PREROLL;
+			msg_Dbg(player->getVlcObj(), "~~~~~~~~~sendBlock PREROLL dts %li, pts %li, blockFrame %i intervalBeginTime = %li", 
+				block->i_dts, block->i_pts, frameInInterval, intervalBeginTime);
 		}
 	}
 	

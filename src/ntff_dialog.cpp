@@ -13,6 +13,7 @@ class Widget
 {
 public:
 	extension_widget_t *getPtr() { return widget; }
+	const char *getText() const { return widget->psz_text; }
 protected:
 	Widget(extension_dialog_t *dialog, extension_widget_type_e type, 
 		const std::string &text, int row, int column)
@@ -33,6 +34,14 @@ class Label: public Widget
 public:
 	Label(extension_dialog_t *dialog, const std::string &text, int row, int column):
 		Widget(dialog, EXTENSION_WIDGET_LABEL, text, row, column) 
+	{}
+};
+
+class Checkbox: public Widget
+{
+public:
+	Checkbox(extension_dialog_t *dialog, const std::string &text, int row, int column):
+		Widget(dialog, EXTENSION_WIDGET_CHECK_BOX, text, row, column) 
 	{}
 };
 
@@ -76,7 +85,7 @@ public:
 		widgets.push_back(minLabel);
 		
 		std::string recMin = std::to_string(feature->getRecommendedMin());
-		Combobox *intensityMin = new Combobox(dialog, recMin, 
+		intensityMin = new Combobox(dialog, recMin, 
 			row, widgets.size(), feature->getIntervalsIntensity());
 		widgets.push_back(intensityMin);
 		
@@ -84,13 +93,22 @@ public:
 		widgets.push_back(maxLabel);
 		
 		std::string recMax = std::to_string(feature->getRecommendedMax());
-		Combobox *intensityMax = new Combobox(dialog, recMax, 
+		intensityMax = new Combobox(dialog, recMax, 
 			row, widgets.size(), feature->getIntervalsIntensity());
 		widgets.push_back(intensityMax);
 	}
+	
 	const std::list<Widget *> &getWidgets() const { return widgets; }
+	
+	void getSelectedIntensity(int8_t &min, int8_t &max)
+	{
+		min = (int8_t)atoi(intensityMin->getText());
+		max = (int8_t)atoi(intensityMax->getText());
+	}
 private:
 	std::list<Widget *> widgets;
+	Combobox *intensityMin;
+	Combobox *intensityMax;
 };
 
 static int DialogCallback(vlc_object_t *, char const *, vlc_value_t, vlc_value_t newval, void *data)
@@ -110,7 +128,7 @@ static int DialogCallback(vlc_object_t *, char const *, vlc_value_t, vlc_value_t
     return VLC_SUCCESS;
 }
 
-Dialog::Dialog(vlc_object_t *obj, const FeatureList *featureList) : obj(obj)
+Dialog::Dialog(vlc_object_t *obj, FeatureList *featureList) : obj(obj)
 {
 	name = "Ntff Settings";
 	dialog = new extension_dialog_t();
@@ -122,10 +140,10 @@ Dialog::Dialog(vlc_object_t *obj, const FeatureList *featureList) : obj(obj)
 	dialog->b_kill = false;
 	
 	int row = 0;
-	for (const Feature *feature: *featureList)
+	for (Feature *feature: *featureList)
 	{
 		FeatureWidget *fwidget = new FeatureWidget(dialog, feature, row);
-		features.push_back(fwidget);
+		features[fwidget] = feature;
 		widgets.insert(widgets.end(), fwidget->getWidgets().begin(), fwidget->getWidgets().end());
 		row++;
 		
@@ -135,7 +153,7 @@ Dialog::Dialog(vlc_object_t *obj, const FeatureList *featureList) : obj(obj)
 	ok = new Button(dialog, "OK", row, 0);
 	widgets.push_back(ok);
 	
-	cancel = new Button(dialog, "Cancel", row, features.front()->getWidgets().size() - 1);
+	cancel = new Button(dialog, "Cancel", row, getMaxColumn());
 	widgets.push_back(cancel);
 	
 	dialog->widgets.i_size = widgets.size();
@@ -158,12 +176,20 @@ Dialog::Dialog(vlc_object_t *obj, const FeatureList *featureList) : obj(obj)
 
 void Dialog::buttonPressed(extension_widget_t *widgetPtr)
 {
-	if (widgetPtr == ok->getPtr())
+	if (widgetPtr == ok->getPtr()) //confirm
 	{
+		for (auto p: features)
+		{
+			FeatureWidget *widget = p.first;
+			Feature *feature = p.second;
+			int8_t min, max;
+			widget->getSelectedIntensity(min, max);
+			feature->setSelected(min, max);
+		}
 		needUpdate = true;
 		close();
 	}
-	else if (widgetPtr == cancel->getPtr())
+	else if (widgetPtr == cancel->getPtr()) //cancel
 	{
 		close();
 	}
@@ -180,18 +206,30 @@ bool Dialog::wait()
 	if (active)
 	{
 		vlc_sem_wait(&sem);
-		if (dialog->b_hide == false)
+	}
+	
+	if (dialog->b_hide == false)
+	{
+		dialog->b_hide = true;
+		vlc_ext_dialog_update(obj, dialog); //need to hide from other thread than DialogCallback
+		if (needUpdate)
 		{
-			dialog->b_hide = true;
-			vlc_ext_dialog_update(obj, dialog); //need to hide from other thread than DialogCallback
-			if (needUpdate)
-			{
-				needUpdate = false;
-				return true;
-			}
+			needUpdate = false;
+			return true;
 		}
 	}
+	
 	return false;
+}
+
+int Dialog::getMaxColumn() const
+{
+	int res = 0;
+	for (Widget *w: widgets)
+	{
+		res = std::max(w->getPtr()->i_column, res);
+	}
+	return res - 1;
 }
 
 

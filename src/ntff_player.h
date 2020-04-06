@@ -26,6 +26,8 @@ public:
 	bool timeIsInPlayInterval(mtime_t time) const;
 	vlc_object_t *getVlcObj() const { return obj; }
 	mtime_t getFrameLen() const;
+	int getFrameId(mtime_t timeInItem) const;
+	int getCurIntervalFirstFrame() const;
 private:
 	vlc_object_t *obj;
 	FeatureList *featureList;

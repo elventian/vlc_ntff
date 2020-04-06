@@ -3,6 +3,7 @@
 
 #include <string>
 #include <list>
+#include <map>
 #include <vlc_common.h>
 
 struct extension_dialog_t;
@@ -11,6 +12,7 @@ struct vlc_object_t;
 
 namespace Ntff {
 
+class Feature;
 class FeatureList;
 class FeatureWidget;
 class Widget;
@@ -19,7 +21,7 @@ class Button;
 class Dialog
 {
 public:
-	Dialog(vlc_object_t *obj, const FeatureList *featureList);
+	Dialog(vlc_object_t *obj, FeatureList *featureList);
 	void buttonPressed(extension_widget_t *widgetPtr);
 	void close();
 	bool isActive() const { return active; }
@@ -29,12 +31,14 @@ private:
 	extension_dialog_t *dialog;
 	std::string name;
 	std::list<Widget *> widgets;
-	std::list<FeatureWidget *> features;
+	std::map<FeatureWidget *, Feature*> features;
 	Button *ok;
 	Button *cancel;
 	bool active;
 	vlc_sem_t sem;
 	bool needUpdate;
+	
+	int getMaxColumn() const;
 };
 
 }

@@ -57,6 +57,20 @@ mtime_t Player::getFrameLen() const
 	}
 }
 
+int Player::getFrameId(mtime_t timeInItem) const
+{
+	return round((double)timeInItem / getFrameLen());
+}
+
+int Player::getCurIntervalFirstFrame() const
+{
+	if (curInterval == playIntervals.end()) return false;
+	
+	Interval &interval = (*curInterval).second;
+	mtime_t timeInItem = interval.in - getCurItem()->getInterval().in;
+	return getFrameId(timeInItem);
+}
+
 uint32_t Player::framesInPlayInterval() const
 {
 	if (curInterval == playIntervals.end()) return 0;
@@ -157,9 +171,7 @@ int Player::play()
 	if (!item) { return VLC_DEMUXER_EOF; }
 	else 
 	{
-		int res = item->play();
-		msg_Dbg(obj, "~~~~Player play: %s, res = %i", item->getName().c_str(), res);
-		return res;
+		return item->play();
 	}
 }
 

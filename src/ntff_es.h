@@ -54,6 +54,7 @@ public:
 private:
 	EStreamCollection streams;
 	mtime_t curTime;
+	mtime_t intervalBeginTime;
 	uint32_t framesNum;
 	
 	es_out_t *out;

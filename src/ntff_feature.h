@@ -34,6 +34,11 @@ public:
 	std::set<std::string> getIntervalsIntensity() const;
 	int8_t getRecommendedMin() const { return recMin; }
 	int8_t getRecommendedMax() const { return recMax; }
+	void setSelected(int8_t min, int8_t max)
+	{
+		selectedMin = min;
+		selectedMax = max;
+	}
 private:
 	std::string name;
 	std::string description;
