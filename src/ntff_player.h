@@ -28,6 +28,8 @@ public:
 	mtime_t getFrameLen() const;
 	int getFrameId(mtime_t timeInItem) const;
 	int getCurIntervalFirstFrame() const;
+	void updatePlayIntervals();
+	void setIntervalsSelected();
 private:
 	vlc_object_t *obj;
 	FeatureList *featureList;
@@ -36,6 +38,7 @@ private:
 	std::map<mtime_t, Interval> playIntervals;
 	std::map<mtime_t, Interval>::iterator curInterval;
 	mtime_t length;
+	bool intervalsSelected;
 	Dialog *dialog;
 	
 	void skipToCurInterval();

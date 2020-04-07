@@ -11,7 +11,9 @@ Player::Player(vlc_object_t *obj, FeatureList *featureList) : obj(obj), featureL
 {
 	demux_t *demuxer = (demux_t *)obj;
 	out = new OutStream(demuxer->out, this);
-	dialog = new Dialog(obj, featureList);
+	dialog = new Dialog(this, featureList);
+	intervalsSelected = false;
+	length = 0;
 }
 
 Player::~Player()
@@ -69,6 +71,19 @@ int Player::getCurIntervalFirstFrame() const
 	Interval &interval = (*curInterval).second;
 	mtime_t timeInItem = interval.in - getCurItem()->getInterval().in;
 	return getFrameId(timeInItem);
+}
+
+void Player::updatePlayIntervals()
+{
+	if (items.size() == 0) return;
+	Item &lastItem  = items.rbegin()->second;
+	length = featureList->formSelectedIntervals(playIntervals, lastItem.getInterval().out); //TODO: split intervals in between files
+}
+
+void Player::setIntervalsSelected()
+{
+	reset();
+	intervalsSelected = true;
 }
 
 uint32_t Player::framesInPlayInterval() const
@@ -153,10 +168,12 @@ int Player::Item::play() const
 
 int Player::play()
 {
-	if (dialog->wait())
+	if (!intervalsSelected) 
 	{
-		reset();
+		if (!dialog->isShown()) { dialog->show(); }
+		return VLC_DEMUXER_SUCCESS;
 	}
+	dialog->close();
 	
 	if (framesInPlayInterval() == out->getFramesNum()) //interval handled, seek to next
 	{
@@ -219,6 +236,7 @@ int Player::control(int query, va_list args)
         case DEMUX_GET_LENGTH:
             ptime = va_arg( args, mtime_t *);
             *ptime = length;
+			msg_Dbg(obj, "DEMUX_GET_LENGTH len = %li", length);
             return VLC_SUCCESS;
 
         case DEMUX_GET_TITLE_INFO:
@@ -236,9 +254,7 @@ int Player::control(int query, va_list args)
 
 void Player::reset()
 {
-	if (items.size() == 0) return;
-	Item &lastItem  = items.rbegin()->second;
-	length = featureList->formSelectedIntervals(playIntervals, lastItem.getInterval().out); //TODO: split intervals in between files
+	updatePlayIntervals();
 	curInterval = playIntervals.begin();
 	skipToCurInterval();
 	

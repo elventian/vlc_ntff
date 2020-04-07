@@ -1,5 +1,6 @@
 #include "ntff_dialog.h"
 #include "ntff_feature.h"
+#include "ntff_player.h"
 #include <vlc_common.h>
 #include <vlc_dialog.h>
 #include <vlc_extensions.h>
@@ -15,13 +16,18 @@ public:
 	extension_widget_t *getPtr() { return widget; }
 	const char *getText() const { return widget->psz_text; }
 protected:
+	void setText(const std::string &text) 
+	{
+		widget->psz_text = new char[text.size() + 1];
+		strcpy(widget->psz_text, text.c_str());
+	}
+	
 	Widget(extension_dialog_t *dialog, extension_widget_type_e type, 
 		const std::string &text, int row, int column)
 	{
 		widget = new extension_widget_t();
 		widget->type = type;
-		widget->psz_text = new char[text.size() + 1];
-		strcpy(widget->psz_text, text.c_str());
+		setText(text); 
 		widget->i_row = row + 1; //+1: row and column id should start from 1
 		widget->i_column = column + 1;
 		widget->p_dialog = dialog;
@@ -157,11 +163,13 @@ static int DialogCallback(vlc_object_t *, char const *, vlc_value_t, vlc_value_t
     return VLC_SUCCESS;
 }
 
-Dialog::Dialog(vlc_object_t *obj, FeatureList *featureList) : obj(obj), featureList(featureList)
+
+Dialog::Dialog(Player *player, FeatureList *featureList) : 
+	player(player), featureList(featureList), shown(false)
 {
 	name = "Ntff Settings";
 	dialog = new extension_dialog_t();
-	dialog->p_object = obj;
+	dialog->p_object = player->getVlcObj();
 	dialog->psz_title = (char *)name.c_str();
 	dialog->p_sys = NULL;
 	dialog->p_sys_intf = NULL;
@@ -176,7 +184,7 @@ Dialog::Dialog(vlc_object_t *obj, FeatureList *featureList) : obj(obj), featureL
 		widgets.insert(widgets.end(), fwidget->getWidgets().begin(), fwidget->getWidgets().end());
 		row++;
 		
-		msg_Dbg(obj, "~~~~~feature name len = %li", feature->getName().size());
+		msg_Dbg(player->getVlcObj(), "~~~~~feature name len = %li", feature->getName().size());
 	}
 	
 	unmarked = new UnmarkedIntervalsWidget(dialog, row++);
@@ -197,54 +205,57 @@ Dialog::Dialog(vlc_object_t *obj, FeatureList *featureList) : obj(obj), featureL
 		id++;
 	}
 	
-	vlc_ext_dialog_update(obj, dialog);
-	var_Create(obj, "dialog-event", VLC_VAR_ADDRESS);
-	var_AddCallback(obj, "dialog-event", DialogCallback, this);
-	
-	active = true;
-	needUpdate = false;
-	vlc_sem_init(&sem, 0);
+	var_Create(player->getVlcObj(), "dialog-event", VLC_VAR_ADDRESS);
+	var_AddCallback(player->getVlcObj(), "dialog-event", DialogCallback, this);
 }
 
 void Dialog::buttonPressed(extension_widget_t *widgetPtr)
 {
 	if (widgetPtr == ok->getPtr()) //confirm
 	{
-		confirm();
-		needUpdate = true;
-		close();
+		updateFeatures();
+		done();
 	}
 	else if (widgetPtr == cancel->getPtr()) //cancel
 	{
-		close();
+		done();
 	}
+}
+
+void Dialog::show()
+{
+	vlc_ext_dialog_update(player->getVlcObj(), dialog);
+	shown = true;
+	
+	auto timerCallback = [](void *ptr)
+	{
+		((Dialog *)ptr)->updateLength();
+	};
+
+	timerOk = vlc_timer_create(&updateLengthTimer, timerCallback, this) == VLC_SUCCESS;
+	if (timerOk) { vlc_timer_schedule(updateLengthTimer, false, CLOCK_FREQ/4, CLOCK_FREQ/4); }
+	else { msg_Warn(player->getVlcObj(), "Unable to create dialog timer"); }
 }
 
 void Dialog::close() 
 {
-	active = false;
-	vlc_sem_post(&sem);
+	if (shown == true)
+	{
+		shown = false;
+		dialog->b_hide = true;
+		vlc_ext_dialog_update(player->getVlcObj(), dialog); //need to hide from other thread than DialogCallback
+	}
 }
 
-bool Dialog::wait()
+void Dialog::appendWidgets(const std::list<Widget *> &other) 
 {
-	if (active)
-	{
-		vlc_sem_wait(&sem);
-	}
-	
-	if (dialog->b_hide == false)
-	{
-		dialog->b_hide = true;
-		vlc_ext_dialog_update(obj, dialog); //need to hide from other thread than DialogCallback
-		if (needUpdate)
-		{
-			needUpdate = false;
-			return true;
-		}
-	}
-	
-	return false;
+	widgets.insert(widgets.end(), other.begin(), other.end());
+}
+
+void Dialog::done()
+{
+	if (timerOk) { vlc_timer_destroy(updateLengthTimer); }
+	player->setIntervalsSelected();
 }
 
 int Dialog::getMaxColumn() const
@@ -257,7 +268,7 @@ int Dialog::getMaxColumn() const
 	return res - 1;
 }
 
-void Dialog::confirm()
+void Dialog::updateFeatures()
 {
 	for (auto p: features)
 	{
@@ -269,6 +280,12 @@ void Dialog::confirm()
 		feature->setActive(widget->isActive());
 	}
 	featureList->appendUnmarked(unmarked->isActive());
+}
+
+void Dialog::updateLength()
+{
+	updateFeatures();
+	player->updatePlayIntervals();
 }
 
 

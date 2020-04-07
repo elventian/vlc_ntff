@@ -12,6 +12,7 @@ struct vlc_object_t;
 
 namespace Ntff {
 
+class Player;
 class Feature;
 class FeatureList;
 class FeatureWidget;
@@ -22,13 +23,14 @@ class UnmarkedIntervalsWidget;
 class Dialog
 {
 public:
-	Dialog(vlc_object_t *obj, FeatureList *featureList);
+	Dialog(Player *player, FeatureList *featureList);
 	void buttonPressed(extension_widget_t *widgetPtr);
+	void show();
 	void close();
-	bool isActive() const { return active; }
-	bool wait();
+	bool isShown() const { return shown; }
+	void updateLength();
 private:
-	vlc_object_t *obj;
+	Player *player;
 	extension_dialog_t *dialog;
 	FeatureList *featureList;
 	std::string name;
@@ -37,16 +39,14 @@ private:
 	UnmarkedIntervalsWidget *unmarked;
 	Button *ok;
 	Button *cancel;
-	bool active;
-	vlc_sem_t sem;
-	bool needUpdate;
+	bool shown;
+	vlc_timer_t updateLengthTimer;
+	bool timerOk;
 	
 	int getMaxColumn() const;
-	void confirm();
-	void appendWidgets(const std::list<Widget *> &other) 
-	{
-		widgets.insert(widgets.end(), other.begin(), other.end());
-	}
+	void updateFeatures();
+	void appendWidgets(const std::list<Widget *> &other);
+	void done();
 };
 
 }
