@@ -13,8 +13,9 @@ namespace Ntff {
 struct Interval
 {
 	Interval(){}
-	Interval(mtime_t in, mtime_t out, int intensity) : in(in), out(out), intensity(intensity) {}
+	Interval(mtime_t in, mtime_t out, int intensity = 0) : in(in), out(out), intensity(intensity) {}
 	bool contains(mtime_t time) const { return time >= in && time < out; }
+	mtime_t length() const { return out - in; }
 	
 	mtime_t in;
 	mtime_t out;
@@ -57,8 +58,13 @@ private:
 class FeatureList: public std::vector<Feature *>
 {
 public:
-	mtime_t formSelectedIntervals(std::map<mtime_t, Interval> &res);
+	mtime_t formSelectedIntervals(std::map<mtime_t, Interval> &res, mtime_t len);
 	~FeatureList();
+	void appendUnmarked(bool append = true) { markedOnly = !append;}
+private:
+	bool markedOnly;
+
+	void insertInterval(std::map<mtime_t, Interval> &container, const Interval& interval) const;
 };
 
 }

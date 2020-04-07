@@ -41,46 +41,53 @@ std::ostream &operator<<(std::ostream &out, const Feature &item)
 	return out;
 }
 
-mtime_t FeatureList::formSelectedIntervals(std::map<mtime_t, Interval> &res)
+mtime_t FeatureList::formSelectedIntervals(std::map<mtime_t, Interval> &res, mtime_t len)
 {
 	res.clear();
-	for (Feature *feature: *this)
+	if (markedOnly) //collect only marked feature intervals
 	{
-		if (!feature->isActive()) { continue; }
-		for (const Interval& interval: feature->getIntervals())
+		for (Feature *feature: *this)
 		{
-			if (feature->isActive(interval))
+			if (!feature->isActive()) { continue; }
+			for (const Interval& interval: feature->getIntervals())
 			{
-				auto it = res.lower_bound(interval.in);
-				if (it == res.end())
+				if (feature->isActive(interval))
 				{
-					res[interval.in] = interval;
-				}
-				else
-				{
-					Interval selected = it->second; //next after interval
-					if (interval.out >= selected.in)
-					{
-						selected.in = interval.in;
-						selected.out = std::max(interval.out, selected.out);
-						res[interval.in] = selected;
-						res.erase(it->first);
-						continue;
-					}
-					
-					if (it != res.begin()) //prev
-					{
-						it--;
-						Interval &selected = it->second;
-						if (interval.in <= selected.out)
-						{
-							if (interval.out > selected.out) { selected.out = interval.out; }
-							continue;
-						}
-					}
-					res[interval.in] = interval;
+					insertInterval(res, interval);
 				}
 			}
+		}
+	}
+	else //find unselected intervals and collect all others
+	{
+		std::map<mtime_t, Interval> skipIntervals;
+		for (Feature *feature: *this)
+		{
+			for (const Interval& interval: feature->getIntervals())
+			{
+				if (!feature->isActive() || !feature->isActive(interval))
+				{
+					insertInterval(skipIntervals, interval);
+				}
+			}
+		}
+		
+		mtime_t lastUnmarked = 0;
+		for (auto &it: skipIntervals)
+		{
+			Interval &skipInterval = it.second;
+			Interval interval(lastUnmarked, skipInterval.in);
+			if (interval.length() > 0)
+			{
+				res[interval.in] = interval;
+			}
+			lastUnmarked = skipInterval.out;
+		}
+		
+		if (lastUnmarked < len)
+		{
+			Interval interval(lastUnmarked, len);
+			res[interval.in] = interval;
 		}
 	}
 	
@@ -98,6 +105,39 @@ FeatureList::~FeatureList()
 	for (Feature *feature: *this)
 	{
 		delete feature;
+	}
+}
+
+void FeatureList::insertInterval(std::map<mtime_t, Interval> &container, const Interval &interval) const
+{
+	auto it = container.lower_bound(interval.in);
+	if (it == container.end())
+	{
+		container[interval.in] = interval;
+	}
+	else
+	{
+		Interval selected = it->second; //next after interval
+		if (interval.out >= selected.in)
+		{
+			selected.in = interval.in;
+			selected.out = std::max(interval.out, selected.out);
+			container[interval.in] = selected;
+			container.erase(it->first);
+			return;
+		}
+		
+		if (it != container.begin()) //prev
+		{
+			it--;
+			Interval &selected = it->second;
+			if (interval.in <= selected.out)
+			{
+				if (interval.out > selected.out) { selected.out = interval.out; }
+				return;
+			}
+		}
+		container[interval.in] = interval;
 	}
 }
 

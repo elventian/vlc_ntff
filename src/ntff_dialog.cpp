@@ -77,35 +77,41 @@ class Button: public Widget
 		Widget(dialog, EXTENSION_WIDGET_BUTTON, text, row, column) {}
 };
 
-class FeatureWidget
+class ComplexWidget
+{
+public:
+	const std::list<Widget *> &getWidgets() const { return widgets; }
+protected:
+	ComplexWidget() {}
+	std::list<Widget *> widgets;
+	int getWidgetsNum() const { return widgets.size(); }
+	void addWidget(Widget *w) { widgets.push_back(w); }
+};
+
+class FeatureWidget: public ComplexWidget
 {
 public:
 	FeatureWidget(extension_dialog_t *dialog, const Feature *feature, int row)
 	{
-		Label *name = new Label(dialog, feature->getName(), row, widgets.size());
-		widgets.push_back(name);
+		addWidget(new Label(dialog, feature->getName(), row, getWidgetsNum()));
 		
-		active = new Checkbox(dialog, "", true, row, widgets.size());
-		widgets.push_back(active);
+		active = new Checkbox(dialog, feature->getName(), true, row, getWidgetsNum());
+		addWidget(active);
 		
-		Label *minLabel = new Label(dialog, "min: " , row, widgets.size());
-		widgets.push_back(minLabel);
+		addWidget(new Label(dialog, "min: " , row, getWidgetsNum()));
 		
 		std::string recMin = std::to_string(feature->getRecommendedMin());
 		intensityMin = new Combobox(dialog, recMin, 
-			row, widgets.size(), feature->getIntervalsIntensity());
-		widgets.push_back(intensityMin);
+			row, getWidgetsNum(), feature->getIntervalsIntensity());
+		addWidget(intensityMin);
 		
-		Label *maxLabel = new Label(dialog, "max: " , row, widgets.size());
-		widgets.push_back(maxLabel);
+		addWidget(new Label(dialog, "max: " , row, getWidgetsNum()));
 		
 		std::string recMax = std::to_string(feature->getRecommendedMax());
 		intensityMax = new Combobox(dialog, recMax, 
-			row, widgets.size(), feature->getIntervalsIntensity());
-		widgets.push_back(intensityMax);
+			row, getWidgetsNum(), feature->getIntervalsIntensity());
+		addWidget(intensityMax);
 	}
-	
-	const std::list<Widget *> &getWidgets() const { return widgets; }
 	
 	void getSelectedIntensity(int8_t &min, int8_t &max)
 	{
@@ -115,9 +121,22 @@ public:
 	
 	bool isActive() const { return active->isChecked(); }
 private:
-	std::list<Widget *> widgets;
 	Combobox *intensityMin;
 	Combobox *intensityMax;
+	Checkbox *active;
+};
+
+class UnmarkedIntervalsWidget: public ComplexWidget
+{
+public:
+	UnmarkedIntervalsWidget(extension_dialog_t *dialog, int row)
+	{
+		addWidget(new Label(dialog, "Other", row, getWidgetsNum()));
+		active = new Checkbox(dialog, "", true, row, getWidgetsNum());
+		addWidget(active);
+	}
+	bool isActive() const { return active->isChecked(); }
+private:
 	Checkbox *active;
 };
 
@@ -138,7 +157,7 @@ static int DialogCallback(vlc_object_t *, char const *, vlc_value_t, vlc_value_t
     return VLC_SUCCESS;
 }
 
-Dialog::Dialog(vlc_object_t *obj, FeatureList *featureList) : obj(obj)
+Dialog::Dialog(vlc_object_t *obj, FeatureList *featureList) : obj(obj), featureList(featureList)
 {
 	name = "Ntff Settings";
 	dialog = new extension_dialog_t();
@@ -159,6 +178,9 @@ Dialog::Dialog(vlc_object_t *obj, FeatureList *featureList) : obj(obj)
 		
 		msg_Dbg(obj, "~~~~~feature name len = %li", feature->getName().size());
 	}
+	
+	unmarked = new UnmarkedIntervalsWidget(dialog, row++);
+	appendWidgets(unmarked->getWidgets());
 	
 	ok = new Button(dialog, "OK", row, 0);
 	widgets.push_back(ok);
@@ -246,6 +268,7 @@ void Dialog::confirm()
 		feature->setSelected(min, max);
 		feature->setActive(widget->isActive());
 	}
+	featureList->appendUnmarked(unmarked->isActive());
 }
 
 

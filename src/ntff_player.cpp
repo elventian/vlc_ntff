@@ -236,7 +236,9 @@ int Player::control(int query, va_list args)
 
 void Player::reset()
 {
-	length = featureList->formSelectedIntervals(playIntervals); //TODO: split intervals in between files
+	if (items.size() == 0) return;
+	Item &lastItem  = items.rbegin()->second;
+	length = featureList->formSelectedIntervals(playIntervals, lastItem.getInterval().out); //TODO: split intervals in between files
 	curInterval = playIntervals.begin();
 	skipToCurInterval();
 	

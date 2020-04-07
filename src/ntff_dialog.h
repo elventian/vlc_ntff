@@ -17,6 +17,7 @@ class FeatureList;
 class FeatureWidget;
 class Widget;
 class Button;
+class UnmarkedIntervalsWidget;
 
 class Dialog
 {
@@ -29,9 +30,11 @@ public:
 private:
 	vlc_object_t *obj;
 	extension_dialog_t *dialog;
+	FeatureList *featureList;
 	std::string name;
 	std::list<Widget *> widgets;
 	std::map<FeatureWidget *, Feature*> features;
+	UnmarkedIntervalsWidget *unmarked;
 	Button *ok;
 	Button *cancel;
 	bool active;
@@ -40,6 +43,10 @@ private:
 	
 	int getMaxColumn() const;
 	void confirm();
+	void appendWidgets(const std::list<Widget *> &other) 
+	{
+		widgets.insert(widgets.end(), other.begin(), other.end());
+	}
 };
 
 }
