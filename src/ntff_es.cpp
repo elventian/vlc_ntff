@@ -4,6 +4,8 @@
 #include <vlc_es.h>
 #include <functional>
 
+#define BLOCK_FLAG_PRIVATE_SKIP_VIDEOBLOCK (5 << BLOCK_FLAG_PRIVATE_SHIFT)
+
 namespace Ntff 
 {
 
@@ -109,8 +111,8 @@ int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 			mtime_t time = updateTime();
 			es_out_Control(out, ES_OUT_SET_PCR, time);
 			
-			msg_Dbg(player->getVlcObj(), "~~~~~~~~~sendBlock dts %li, pts %li, blockFrame %i intervalBeginTime = %li", 
-				block->i_dts, block->i_pts, frameInInterval, intervalBeginTime);
+			//msg_Dbg(player->getVlcObj(), "~~~~~~~~~sendBlock dts %li, pts %li, blockFrame %i intervalBeginTime = %li", 
+			//	block->i_dts, block->i_pts, frameInInterval, intervalBeginTime);
 		}
 	}
 	else
@@ -124,9 +126,9 @@ int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 			//block->i_dts -= player->getFrameLen();
 			//block->i_dts += frameInInterval;
 			block->i_pts = getTime() + frameInInterval;
-			block->i_flags |= BLOCK_FLAG_PREROLL;
-			msg_Dbg(player->getVlcObj(), "~~~~~~~~~sendBlock PREROLL dts %li, pts %li, blockFrame %i intervalBeginTime = %li", 
-				block->i_dts, block->i_pts, frameInInterval, intervalBeginTime);
+			block->i_flags |= BLOCK_FLAG_PRIVATE_SKIP_VIDEOBLOCK;
+			//msg_Dbg(player->getVlcObj(), "~~~~~~~~~sendBlock PREROLL dts %li, pts %li, blockFrame %i intervalBeginTime = %li", 
+			//	block->i_dts, block->i_pts, frameInInterval, intervalBeginTime);
 		}
 	}
 	

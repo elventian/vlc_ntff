@@ -7,7 +7,7 @@ namespace Ntff
 
 Feature::Feature(const std::string &name, const std::string &description, int recMin, int recMax) :
 	name(name), description(description),
-	recMin(recMin), recMax(recMax)
+	recMin(recMin), recMax(recMax), active(true)
 {
 	min = std::numeric_limits<int8_t>::max();
 	max = std::numeric_limits<int8_t>::min();
@@ -46,6 +46,7 @@ mtime_t FeatureList::formSelectedIntervals(std::map<mtime_t, Interval> &res)
 	res.clear();
 	for (Feature *feature: *this)
 	{
+		if (!feature->isActive()) { continue; }
 		for (const Interval& interval: feature->getIntervals())
 		{
 			if (feature->isActive(interval))

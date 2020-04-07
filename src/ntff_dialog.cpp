@@ -40,9 +40,13 @@ public:
 class Checkbox: public Widget
 {
 public:
-	Checkbox(extension_dialog_t *dialog, const std::string &text, int row, int column):
+	Checkbox(extension_dialog_t *dialog, const std::string &text, bool checked, int row, int column):
 		Widget(dialog, EXTENSION_WIDGET_CHECK_BOX, text, row, column) 
-	{}
+	{
+		widget->b_checked = checked;
+	}
+	
+	bool isChecked() const { return widget->b_checked; }
 };
 
 class Combobox: public Widget
@@ -81,6 +85,9 @@ public:
 		Label *name = new Label(dialog, feature->getName(), row, widgets.size());
 		widgets.push_back(name);
 		
+		active = new Checkbox(dialog, "", true, row, widgets.size());
+		widgets.push_back(active);
+		
 		Label *minLabel = new Label(dialog, "min: " , row, widgets.size());
 		widgets.push_back(minLabel);
 		
@@ -105,10 +112,13 @@ public:
 		min = (int8_t)atoi(intensityMin->getText());
 		max = (int8_t)atoi(intensityMax->getText());
 	}
+	
+	bool isActive() const { return active->isChecked(); }
 private:
 	std::list<Widget *> widgets;
 	Combobox *intensityMin;
 	Combobox *intensityMax;
+	Checkbox *active;
 };
 
 static int DialogCallback(vlc_object_t *, char const *, vlc_value_t, vlc_value_t newval, void *data)
@@ -178,14 +188,7 @@ void Dialog::buttonPressed(extension_widget_t *widgetPtr)
 {
 	if (widgetPtr == ok->getPtr()) //confirm
 	{
-		for (auto p: features)
-		{
-			FeatureWidget *widget = p.first;
-			Feature *feature = p.second;
-			int8_t min, max;
-			widget->getSelectedIntensity(min, max);
-			feature->setSelected(min, max);
-		}
+		confirm();
 		needUpdate = true;
 		close();
 	}
@@ -230,6 +233,19 @@ int Dialog::getMaxColumn() const
 		res = std::max(w->getPtr()->i_column, res);
 	}
 	return res - 1;
+}
+
+void Dialog::confirm()
+{
+	for (auto p: features)
+	{
+		FeatureWidget *widget = p.first;
+		Feature *feature = p.second;
+		int8_t min, max;
+		widget->getSelectedIntensity(min, max);
+		feature->setSelected(min, max);
+		feature->setActive(widget->isActive());
+	}
 }
 
 

@@ -39,6 +39,7 @@ private:
 	bool needUpdate;
 	
 	int getMaxColumn() const;
+	void confirm();
 };
 
 }

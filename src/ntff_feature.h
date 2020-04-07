@@ -39,6 +39,8 @@ public:
 		selectedMin = min;
 		selectedMax = max;
 	}
+	void setActive(bool activate = true) { active = activate; }
+	bool isActive() const { return active; }
 private:
 	std::string name;
 	std::string description;
@@ -48,6 +50,7 @@ private:
 	int8_t recMax;
 	int8_t selectedMin;
 	int8_t selectedMax;
+	bool active;
 	std::vector<Interval> intervals;
 };
 
