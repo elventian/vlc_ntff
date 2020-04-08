@@ -10,7 +10,7 @@ namespace Ntff
 {
 
 OutStream::OutStream(es_out_t *out, Player *player) : 
-	curTime(0), intervalBeginTime(0), framesNum(0), 
+	curTime(0), framesNum(0), 
 	out(out), player(player)
 {
 	wrapper.p_sys = (es_out_sys_t *)this;
@@ -46,6 +46,13 @@ mtime_t OutStream::updateTime()
 	framesNum++;
 	curTime += player->getFrameLen();
 	return curTime;
+}
+
+void OutStream::setTime(mtime_t time, uint32_t framesSkipped)
+{
+	curTime = time;
+	framesNum = framesSkipped;
+	es_out_Control(out, ES_OUT_RESET_PCR);
 }
 
 es_out_id_t *OutStream::addElemental(const es_format_t *format)
@@ -91,12 +98,10 @@ int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 	
 	if (isVideo(streamId))
 	{
-		if (frameInInterval == 0) { intervalBeginTime = getTime(); }
-		
 		block->i_dts = getTime();
 		if (block->i_pts != 0)
 		{
-			block->i_pts = intervalBeginTime + frameInInterval * player->getFrameLen();
+			block->i_pts = 0;
 		}
 	}
 	else if (isAudio(streamId))
@@ -111,8 +116,7 @@ int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 			mtime_t time = updateTime();
 			es_out_Control(out, ES_OUT_SET_PCR, time);
 			
-			//msg_Dbg(player->getVlcObj(), "~~~~~~~~~sendBlock dts %li, pts %li, blockFrame %i intervalBeginTime = %li", 
-			//	block->i_dts, block->i_pts, frameInInterval, intervalBeginTime);
+			//msg_Dbg(player->getVlcObj(), "sendBlock dts = %li, pts = %li, frameInInterval = %i", block->i_dts, block->i_pts, frameInInterval);
 		}
 	}
 	else
@@ -123,12 +127,9 @@ int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 		}
 		else if (isVideo(streamId))
 		{
-			//block->i_dts -= player->getFrameLen();
-			//block->i_dts += frameInInterval;
 			block->i_pts = getTime() + frameInInterval;
 			block->i_flags |= BLOCK_FLAG_PRIVATE_SKIP_VIDEOBLOCK;
-			//msg_Dbg(player->getVlcObj(), "~~~~~~~~~sendBlock PREROLL dts %li, pts %li, blockFrame %i intervalBeginTime = %li", 
-			//	block->i_dts, block->i_pts, frameInInterval, intervalBeginTime);
+			//msg_Dbg(player->getVlcObj(), "sendBlock SKIP_VIDEOBLOCK");
 		}
 	}
 	

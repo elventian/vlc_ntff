@@ -22,6 +22,7 @@ public:
 	int play();
 	int control(int query, va_list args);
 	void reset();
+	void seek(double pos);
 	
 	bool timeIsInPlayInterval(mtime_t time) const;
 	vlc_object_t *getVlcObj() const { return obj; }
@@ -46,6 +47,7 @@ private:
 	Item *getItemAt(mtime_t time);
 	const Item *getItemAt(mtime_t time) const;
 	uint32_t framesInPlayInterval() const;
+	mtime_t globalToLocalTime(mtime_t global) const; //convert global project time to local file time
 };
 
 class Player::Item
@@ -59,6 +61,7 @@ public:
 	void skip(mtime_t time) const;
 	int play() const;
 	const Interval &getInterval() const { return interval; }
+	mtime_t globalToLocalTime(mtime_t global) const { return global - interval.in;}
 private:
 	Interval interval;
 	double frameLen;

@@ -95,6 +95,15 @@ uint32_t Player::framesInPlayInterval() const
 	return (interval.out - interval.in) / item->getFrameLen();
 }
 
+mtime_t Player::globalToLocalTime(mtime_t global) const 
+{
+	const Item *item = getItemAt(global);
+	if (!item) return 0;
+	
+	return item->globalToLocalTime(global);
+}
+
+
 Player::Item *Player::getItemAt(mtime_t time)
 {
 	return const_cast<Item *>(static_cast<const Player&>(*this).getItemAt(time));
@@ -122,11 +131,11 @@ void Player::skipToCurInterval()
 	if (curInterval == playIntervals.end()) return;
 	
 	Interval &interval = (*curInterval).second;
+	
 	Item *item = getItemAt(interval.in);
 	if (!item) return;
 	
-	msg_Dbg(obj, "~~~~skipToCurInterval: %li", interval.in);
-	item->skip(interval.in);
+	item->skip(item->globalToLocalTime(interval.in));
 }
 
 const Player::Item *Player::getCurItem() const
@@ -158,7 +167,7 @@ Player::Item::Item(vlc_object_t *obj, const Interval &interval,
 
 void Player::Item::skip(mtime_t time) const
 {
-	demux_Control(demux, DEMUX_SET_TIME, time - interval.in, true);
+	demux_Control(demux, DEMUX_SET_TIME, time, true);
 }
 
 int Player::Item::play() const
@@ -201,6 +210,7 @@ int Player::control(int query, va_list args)
     switch(query)
     {
         case DEMUX_CAN_SEEK:
+			*va_arg(args, bool *) = true;
             return VLC_SUCCESS;
 
         case DEMUX_GET_META:
@@ -231,12 +241,12 @@ int Player::control(int query, va_list args)
             return VLC_SUCCESS;
 
         case DEMUX_SET_POSITION:
+			seek(va_arg(args, double));
             return VLC_SUCCESS;
 
         case DEMUX_GET_LENGTH:
             ptime = va_arg( args, mtime_t *);
             *ptime = length;
-			msg_Dbg(obj, "DEMUX_GET_LENGTH len = %li", length);
             return VLC_SUCCESS;
 
         case DEMUX_GET_TITLE_INFO:
@@ -269,6 +279,33 @@ void Player::reset()
 	{
 		msg_Dbg(obj, "~~~~item length: %li - %li", p.second.getInterval().in, p.second.getInterval().out);
 	}
+}
+
+void Player::seek(double pos)
+{
+	const mtime_t targetTime = length * pos;
+	mtime_t skippedTime = 0;
+	
+	for (auto it = playIntervals.begin(); it != playIntervals.end(); it++)
+	{
+		Interval &interval = (*it).second;
+		if (skippedTime + interval.length() < targetTime) //found target interval
+		{
+			skippedTime += interval.length();
+		}
+		else 
+		{
+			curInterval = it;
+			mtime_t globalTime = targetTime - skippedTime + interval.in;
+			Item *item = getItemAt(globalTime);
+			if (!item) return;
+			
+			item->skip(item->globalToLocalTime(globalTime));
+			uint32_t skippedFrames = getFrameId(globalTime - interval.in) - 1;
+			out->setTime(targetTime, skippedFrames);
+			return;
+		}
+	}	
 }
 
 

@@ -41,6 +41,7 @@ public:
 	bool isAudio(es_out_id_t *stream) const { return streams.getType(stream) == Audio; }
 	mtime_t updateTime();
 	void resetFramesNum() { framesNum = 0; }
+	void setTime(mtime_t time, uint32_t framesSkipped);
 	mtime_t getTime() const { return curTime; }
 	uint32_t getFramesNum() const { return framesNum; }
 	es_out_t *getWrapperStream() { return &wrapper; }
@@ -54,7 +55,6 @@ public:
 private:
 	EStreamCollection streams;
 	mtime_t curTime;
-	mtime_t intervalBeginTime;
 	uint32_t framesNum;
 	
 	es_out_t *out;
