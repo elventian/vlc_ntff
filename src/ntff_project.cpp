@@ -521,9 +521,9 @@ FeatureList *Project::generateFeatureList() const
 	return flist;
 }
 
-Player *Project::createPlayer() const
+Player *Project::createPlayer(demux_t *demux) const
 {
-	Player *player = new Player(obj, generateFeatureList());
+	Player *player = new Player(demux, generateFeatureList());
 	for (const Entry &entry: mainPlaylist->getEntries())
 	{
 		player->addFile(entry.getInterval(), entry.getResource());

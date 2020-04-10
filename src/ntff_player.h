@@ -15,7 +15,7 @@ class Player
 {
 	class Item;
 public:
-	Player(vlc_object_t *obj, FeatureList *featureList);
+	Player(demux_t *obj, FeatureList *featureList);
 	~Player();
 	bool isValid() const;
 	void addFile(const Interval &interval, const std::string &filename);
@@ -23,22 +23,28 @@ public:
 	int control(int query, va_list args);
 	void reset();
 	void seek(double pos);
+	void setPause(bool pause) const;
 	
 	bool timeIsInPlayInterval(mtime_t time) const;
-	vlc_object_t *getVlcObj() const { return obj; }
+	vlc_object_t *getVlcObj() const { return (vlc_object_t *)obj; }
 	mtime_t getFrameLen() const;
 	int getFrameId(mtime_t timeInItem) const;
 	int getCurIntervalFirstFrame() const;
 	void updatePlayIntervals();
 	void setIntervalsSelected();
+	void showDialog();
+	void hideDialog();
+	mtime_t getGlobalTime() const;
 private:
-	vlc_object_t *obj;
+	demux_t *obj;
 	FeatureList *featureList;
 	std::map<mtime_t, Item> items;
 	OutStream *out;
+	vlc_mutex_t intervalsMutex;
 	std::map<mtime_t, Interval> playIntervals;
 	std::map<mtime_t, Interval>::iterator curInterval;
 	mtime_t length;
+	mtime_t savedTime;
 	bool intervalsSelected;
 	Dialog *dialog;
 	
@@ -46,8 +52,11 @@ private:
 	const Item *getCurItem() const;
 	Item *getItemAt(mtime_t time);
 	const Item *getItemAt(mtime_t time) const;
-	uint32_t framesInPlayInterval() const;
+	Interval getCurInterval() const;
+	int framesInPlayInterval() const;
 	mtime_t globalToLocalTime(mtime_t global) const; //convert global project time to local file time
+	void seek(mtime_t globalTime, mtime_t streamTime);
+	mtime_t getStreamTimeByGlobal(mtime_t global) const;
 };
 
 class Player::Item

@@ -46,13 +46,6 @@ static int Demux(demux_t * p_demux)
 	return p_sys->player->play();
 }
 
-/*static int ActionEvent(vlc_object_t *obj, char const *, vlc_value_t, vlc_value_t, void *)
-{
-	msg_Dbg(obj, "~~~~~ActionEvent");
-	return VLC_SUCCESS;
-}
-*/
-
 static int Open(vlc_object_t *p_this)
 {	
 	demux_t *p_demux = (demux_t *)p_this;
@@ -65,13 +58,11 @@ static int Open(vlc_object_t *p_this)
 	Ntff::Project project(p_this, p_demux->psz_file, p_demux->s);
 	if (!project.isValid()) { return VLC_EGENERIC; }
 	
-	p_sys->player = project.createPlayer();
+	p_sys->player = project.createPlayer(p_demux);
 	if (!p_sys->player->isValid()) { return VLC_EGENERIC; }
-	//var_AddCallback( p_this->obj.libvlc, "key-action", ActionEvent, nullptr);
 	
 	return VLC_SUCCESS;
 }
- 
 
 static void Close(vlc_object_t *obj)
 {

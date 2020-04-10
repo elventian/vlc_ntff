@@ -224,6 +224,7 @@ void Dialog::buttonPressed(extension_widget_t *widgetPtr)
 
 void Dialog::show()
 {
+	dialog->b_hide = false;
 	vlc_ext_dialog_update(player->getVlcObj(), dialog);
 	shown = true;
 	
@@ -268,24 +269,28 @@ int Dialog::getMaxColumn() const
 	return res - 1;
 }
 
-void Dialog::updateFeatures()
+bool Dialog::updateFeatures()
 {
+	bool updated = false;
 	for (auto p: features)
 	{
 		FeatureWidget *widget = p.first;
 		Feature *feature = p.second;
 		int8_t min, max;
 		widget->getSelectedIntensity(min, max);
-		feature->setSelected(min, max);
-		feature->setActive(widget->isActive());
+		updated |= feature->setSelected(min, max);
+		updated |= feature->setActive(widget->isActive());
 	}
-	featureList->appendUnmarked(unmarked->isActive());
+	updated |= featureList->appendUnmarked(unmarked->isActive());
+	return updated;
 }
 
 void Dialog::updateLength()
 {
-	updateFeatures();
-	player->updatePlayIntervals();
+	if (updateFeatures())
+	{
+		player->updatePlayIntervals();
+	}
 }
 
 

@@ -10,7 +10,7 @@ namespace Ntff
 {
 
 OutStream::OutStream(es_out_t *out, Player *player) : 
-	curTime(0), framesNum(0), 
+	curTime(0),
 	out(out), player(player)
 {
 	wrapper.p_sys = (es_out_sys_t *)this;
@@ -43,16 +43,21 @@ OutStream::OutStream(es_out_t *out, Player *player) :
 
 mtime_t OutStream::updateTime()
 {
-	framesNum++;
 	curTime += player->getFrameLen();
 	return curTime;
 }
 
-void OutStream::setTime(mtime_t time, uint32_t framesSkipped)
+void OutStream::setTime(mtime_t time)
 {
 	curTime = time;
-	framesNum = framesSkipped;
+	resetFramesNum();
 	es_out_Control(out, ES_OUT_RESET_PCR);
+}
+
+int OutStream::getHandledFrameNum() const
+{
+	if (framesQueue.empty()) return 0;
+	else return *framesQueue.begin();
 }
 
 es_out_id_t *OutStream::addElemental(const es_format_t *format)
@@ -90,6 +95,25 @@ void OutStream::destroyOutStream()
 	out->pf_destroy(out);
 }
 
+void OutStream::addFrame(uint32_t frame)
+{
+	framesQueue.insert(frame);
+	if (framesQueue.size() < 2) return;
+	
+	for (auto it = framesQueue.begin(); it != framesQueue.end(); it++)
+	{
+		auto next = it;
+		next++;
+		if (next == framesQueue.end() || (*it + 1 != *next))
+		{
+			framesQueue.erase(framesQueue.begin(), it);
+			break;
+		}		
+	}
+	//fix for cases when one frame is skipped by any reason
+	if (framesQueue.size() > 10) { framesQueue.erase(framesQueue.begin()); }
+}
+
 int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 {
 	mtime_t blockTime = (block->i_pts == 0) ? block->i_dts : block->i_pts;
@@ -98,6 +122,15 @@ int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 	
 	if (isVideo(streamId))
 	{
+		bool dup = framesQueue.count(frameInInterval) > 0;
+		addFrame(frameInInterval);
+		std::string frames;
+		for (auto it = framesQueue.begin(); it != framesQueue.end(); it++)
+		{
+			frames += std::to_string(*it) + " ";
+		}
+		msg_Dbg(player->getVlcObj(), "sendBlock %s cur = %li frames: %s", dup? "DUPLICATE": "", block->i_pts, frames.c_str());
+		
 		block->i_dts = getTime();
 		if (block->i_pts != 0)
 		{
@@ -116,7 +149,7 @@ int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 			mtime_t time = updateTime();
 			es_out_Control(out, ES_OUT_SET_PCR, time);
 			
-			//msg_Dbg(player->getVlcObj(), "sendBlock dts = %li, pts = %li, frameInInterval = %i", block->i_dts, block->i_pts, frameInInterval);
+			//msg_Dbg(player->getVlcObj(), "sendBlock blockTime = %li, frameInInterval = %i", blockTime, frameInInterval);
 		}
 	}
 	else

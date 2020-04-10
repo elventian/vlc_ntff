@@ -4,16 +4,33 @@
 #include "ntff_dialog.h"
 #include <vlc_stream_extractor.h>
 #include <vlc_demux.h>
+#include <vlc_actions.h>
+#include <vlc_input.h>
+#include <vlc_threads.h>
 
 namespace Ntff {
 
-Player::Player(vlc_object_t *obj, FeatureList *featureList) : obj(obj), featureList(featureList)
+static int ActionEvent( vlc_object_t *, char const *, vlc_value_t, vlc_value_t newval, void *p_data )
+{
+	if (newval.i_int == ACTIONID_INTF_TOGGLE_FSC)
+	{
+		Player *player = (Player *)p_data;
+		msg_Dbg(player->getVlcObj(), "ActionEvent");
+		player->showDialog();
+	}
+	return VLC_SUCCESS;
+}
+
+Player::Player(demux_t *obj, FeatureList *featureList) : obj(obj), featureList(featureList)
 {
 	demux_t *demuxer = (demux_t *)obj;
 	out = new OutStream(demuxer->out, this);
 	dialog = new Dialog(this, featureList);
 	intervalsSelected = false;
 	length = 0;
+	curInterval = playIntervals.begin();
+	vlc_mutex_init(&intervalsMutex);
+	var_AddCallback( obj->obj.libvlc, "key-action", ActionEvent, this);
 }
 
 Player::~Player()
@@ -21,6 +38,8 @@ Player::~Player()
 	delete featureList;
 	delete out;
 	delete dialog;
+	vlc_mutex_destroy(&intervalsMutex);
+	var_DelCallback( obj->obj.libvlc, "key-action", ActionEvent, this);
 }
 
 bool Player::isValid() const
@@ -38,15 +57,12 @@ bool Player::isValid() const
 void Player::addFile(const Interval &interval, const std::string &filename)
 {
 	out->reuseStreams();
-	items[interval.in] = Item(obj, interval, out->getWrapperStream(), filename);
+	items[interval.in] = Item((vlc_object_t *)obj, interval, out->getWrapperStream(), filename);
 }
 
 bool Player::timeIsInPlayInterval(mtime_t time) const
 {
-	if (curInterval == playIntervals.end()) return false;
-	
-	Interval &interval = (*curInterval).second;
-	return interval.contains(getCurItem()->getInterval().in + time);
+	return getCurInterval().contains(getCurItem()->getInterval().in + time);
 }
 
 mtime_t Player::getFrameLen() const
@@ -66,31 +82,86 @@ int Player::getFrameId(mtime_t timeInItem) const
 
 int Player::getCurIntervalFirstFrame() const
 {
-	if (curInterval == playIntervals.end()) return false;
-	
-	Interval &interval = (*curInterval).second;
-	mtime_t timeInItem = interval.in - getCurItem()->getInterval().in;
+	mtime_t timeInItem = getCurInterval().in - getCurItem()->getInterval().in;
 	return getFrameId(timeInItem);
 }
 
 void Player::updatePlayIntervals()
 {
 	if (items.size() == 0) return;
+	
+	msg_Dbg(obj, "updatePlayIntervals");
+	
+	vlc_mutex_lock(&intervalsMutex);
+	
 	Item &lastItem  = items.rbegin()->second;
 	length = featureList->formSelectedIntervals(playIntervals, lastItem.getInterval().out); //TODO: split intervals in between files
+	
+	//var_SetInteger(obj->p_input, "length", length);
+	
+	if (savedTime)
+	{
+		auto closestIt = playIntervals.lower_bound(savedTime);
+		if (closestIt == playIntervals.end()) 
+		{
+			closestIt = playIntervals.begin(); 
+		}
+		else if (closestIt != playIntervals.begin())
+		{
+			closestIt--; //select prev interval, if it contains our timestamp
+			if (closestIt->second.out <= savedTime)
+			{
+				closestIt++;
+			}
+		}
+		curInterval = closestIt;
+	}
+	else { curInterval = playIntervals.begin(); }
+	
+	msg_Dbg(obj, "~~~~Player Intervals: %li", playIntervals.size());
+	for (auto p: playIntervals)
+	{
+		msg_Dbg(obj, "~~~~interval: %li - %li", p.second.in, p.second.out);
+	}
+	msg_Dbg(obj, "Player frames in cur: %i", framesInPlayInterval());
+	
+	vlc_mutex_unlock(&intervalsMutex);
 }
 
 void Player::setIntervalsSelected()
 {
-	reset();
+	//reset();
+	Interval &newInterval = curInterval->second;
+	mtime_t newTime = newInterval.contains(savedTime) ? savedTime : newInterval.in;
+	
+	msg_Dbg(obj, "Seek to %li", newTime);
+	seek(newTime, getStreamTimeByGlobal(newTime));
+
 	intervalsSelected = true;
+	setPause(false);
 }
 
-uint32_t Player::framesInPlayInterval() const
+void Player::showDialog() 
 {
-	if (curInterval == playIntervals.end()) return 0;
-	
-	Interval &interval = (*curInterval).second;
+	setPause(true);
+	intervalsSelected = false; 
+	savedTime = getGlobalTime();
+	dialog->show();
+}
+
+void Player::hideDialog()
+{
+	dialog->close();
+}
+
+mtime_t Player::getGlobalTime() const
+{
+	return getCurInterval().in + out->getHandledFrameNum() * getFrameLen();
+}
+
+int Player::framesInPlayInterval() const
+{
+	Interval interval = getCurInterval();
 	const Player::Item *item = getItemAt(interval.in);
 	return (interval.out - interval.in) / item->getFrameLen();
 }
@@ -102,7 +173,6 @@ mtime_t Player::globalToLocalTime(mtime_t global) const
 	
 	return item->globalToLocalTime(global);
 }
-
 
 Player::Item *Player::getItemAt(mtime_t time)
 {
@@ -126,12 +196,15 @@ const Player::Item *Player::getItemAt(mtime_t time) const
 	}
 }
 
+Interval Player::getCurInterval() const
+{
+	if (curInterval == playIntervals.end()) { return Interval(); }
+	return curInterval->second;
+}
+
 void Player::skipToCurInterval()
 {
-	if (curInterval == playIntervals.end()) return;
-	
-	Interval &interval = (*curInterval).second;
-	
+	Interval interval = getCurInterval();
 	Item *item = getItemAt(interval.in);
 	if (!item) return;
 	
@@ -140,10 +213,7 @@ void Player::skipToCurInterval()
 
 const Player::Item *Player::getCurItem() const
 {
-	if (curInterval == playIntervals.end()) return nullptr;
-	
-	Interval &interval = (*curInterval).second;
-	return getItemAt(interval.in);
+	return getItemAt(getCurInterval().in);
 }
 
 Player::Item::Item(vlc_object_t *obj, const Interval &interval, 
@@ -177,28 +247,36 @@ int Player::Item::play() const
 
 int Player::play()
 {
-	if (!intervalsSelected) 
+	int res = VLC_DEMUXER_SUCCESS;
+	//msg_Dbg(obj, "Player");
+	if (!intervalsSelected && !dialog->isShown()) { showDialog(); }
+	else if (intervalsSelected && dialog->isShown()) { hideDialog(); }
+	else
 	{
-		if (!dialog->isShown()) { dialog->show(); }
-		return VLC_DEMUXER_SUCCESS;
-	}
-	dialog->close();
+		vlc_mutex_lock(&intervalsMutex);
 	
-	if (framesInPlayInterval() == out->getFramesNum()) //interval handled, seek to next
-	{
-		curInterval++;
-		out->resetFramesNum();
-		skipToCurInterval();
-		if (curInterval == playIntervals.end()) { return VLC_DEMUXER_EOF; }
-		msg_Dbg(obj, "~~~~Player next interval: %li", (*curInterval).first);
+		if (framesInPlayInterval() <= out->getHandledFrameNum()) //interval handled, seek to next
+		{
+			curInterval++;
+			if (curInterval == playIntervals.end()) { res = VLC_DEMUXER_EOF; }
+			else 
+			{
+				out->resetFramesNum();
+				skipToCurInterval();
+				msg_Dbg(obj, "~~~~Player next interval: %li", (*curInterval).first);
+			}
+		}
+		
+		const Item *item = getCurItem();
+		if (!item) { res = VLC_DEMUXER_EOF; }
+		if (res != VLC_DEMUXER_EOF)
+		{
+			res = item->play();
+		}
+		
+		vlc_mutex_unlock(&intervalsMutex);
 	}
-	
-	const Item *item = getCurItem();
-	if (!item) { return VLC_DEMUXER_EOF; }
-	else 
-	{
-		return item->play();
-	}
+	return res;
 }
 
 int Player::control(int query, va_list args)
@@ -268,12 +346,6 @@ void Player::reset()
 	curInterval = playIntervals.begin();
 	skipToCurInterval();
 	
-	msg_Dbg(obj, "~~~~Player Intervals: %li", playIntervals.size());
-	for (auto p: playIntervals)
-	{
-		msg_Dbg(obj, "~~~~interval: %li - %li", p.second.in, p.second.out);
-	}
-	
 	msg_Dbg(obj, "~~~~Player Items: %li", items.size());
 	for (auto p: items)
 	{
@@ -283,29 +355,50 @@ void Player::reset()
 
 void Player::seek(double pos)
 {
-	const mtime_t targetTime = length * pos;
+	const mtime_t streamTime = length * pos;
 	mtime_t skippedTime = 0;
 	
 	for (auto it = playIntervals.begin(); it != playIntervals.end(); it++)
 	{
 		Interval &interval = (*it).second;
-		if (skippedTime + interval.length() < targetTime) //found target interval
+		if (skippedTime + interval.length() < streamTime) //found target interval
 		{
 			skippedTime += interval.length();
 		}
 		else 
 		{
 			curInterval = it;
-			mtime_t globalTime = targetTime - skippedTime + interval.in;
-			Item *item = getItemAt(globalTime);
-			if (!item) return;
-			
-			item->skip(item->globalToLocalTime(globalTime));
-			uint32_t skippedFrames = getFrameId(globalTime - interval.in) - 1;
-			out->setTime(targetTime, skippedFrames);
+			mtime_t globalTime = streamTime - skippedTime + interval.in;
+			seek(globalTime, streamTime);
 			return;
 		}
-	}	
+	}
+}
+
+void Player::seek(mtime_t globalTime, mtime_t streamTime)
+{
+	Item *item = getItemAt(globalTime);
+	if (!item) return;
+	
+	item->skip(item->globalToLocalTime(globalTime));
+	out->setTime(streamTime);
+}
+
+mtime_t Player::getStreamTimeByGlobal(mtime_t global) const
+{
+	mtime_t streamTime = 0;
+	for (auto it = playIntervals.begin(); it != playIntervals.end(); it++)
+	{
+		const Interval &interval = (*it).second;
+		if (interval.in > global) { return streamTime; }
+		if (interval.out <= global) { streamTime += interval.length(); }
+	}
+	return streamTime;
+}
+
+void Player::setPause(bool pause) const
+{
+	var_SetInteger( obj->p_input, "state", pause? PAUSE_S: PLAYING_S);
 }
 
 

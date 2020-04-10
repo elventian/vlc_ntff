@@ -6,6 +6,7 @@
 struct stream_t;
 struct vlc_object_t;
 struct xml_reader_t;
+struct demux_t;
 
 namespace Ntff {
 
@@ -21,7 +22,7 @@ class Project
 		Project(vlc_object_t *obj, const char *file, stream_t *stream);
 		bool isValid() const { return valid; }
 		float getFrameLen() const { return 1000000 / fps;}
-		Player *createPlayer() const;
+		Player *createPlayer(demux_t *demux) const;
 		
 		static int nextSibling(xml_reader_t *reader, const std::string &curNode, 
 			bool curEmpty, std::string &resNode);

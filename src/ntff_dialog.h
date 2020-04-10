@@ -44,7 +44,7 @@ private:
 	bool timerOk;
 	
 	int getMaxColumn() const;
-	void updateFeatures();
+	bool updateFeatures();
 	void appendWidgets(const std::list<Widget *> &other);
 	void done();
 };

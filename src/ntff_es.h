@@ -40,10 +40,10 @@ public:
 	bool isVideo(es_out_id_t *stream) const { return streams.getType(stream) == Video; }
 	bool isAudio(es_out_id_t *stream) const { return streams.getType(stream) == Audio; }
 	mtime_t updateTime();
-	void resetFramesNum() { framesNum = 0; }
-	void setTime(mtime_t time, uint32_t framesSkipped);
+	void resetFramesNum() { framesQueue.clear(); }
+	void setTime(mtime_t time);
 	mtime_t getTime() const { return curTime; }
-	uint32_t getFramesNum() const { return framesNum; }
+	int getHandledFrameNum() const;
 	es_out_t *getWrapperStream() { return &wrapper; }
 	void reuseStreams() { streams.reuse(); }
 	
@@ -55,11 +55,13 @@ public:
 private:
 	EStreamCollection streams;
 	mtime_t curTime;
-	uint32_t framesNum;
+	std::set<int> framesQueue;
 	
 	es_out_t *out;
 	es_out_t wrapper;
 	Player *player;
+	
+	void addFrame(uint32_t frame);
 };
 
 }

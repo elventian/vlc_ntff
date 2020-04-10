@@ -12,7 +12,7 @@ namespace Ntff {
 
 struct Interval
 {
-	Interval(){}
+	Interval(): in(0), out(0){}
 	Interval(mtime_t in, mtime_t out, int intensity = 0) : in(in), out(out), intensity(intensity) {}
 	bool contains(mtime_t time) const { return time >= in && time < out; }
 	mtime_t length() const { return out - in; }
@@ -35,12 +35,19 @@ public:
 	std::set<std::string> getIntervalsIntensity() const;
 	int8_t getRecommendedMin() const { return recMin; }
 	int8_t getRecommendedMax() const { return recMax; }
-	void setSelected(int8_t min, int8_t max)
+	bool setSelected(int8_t min, int8_t max)
 	{
+		bool res = (selectedMin != min || selectedMax != max);
 		selectedMin = min;
 		selectedMax = max;
+		return res;
 	}
-	void setActive(bool activate = true) { active = activate; }
+	bool setActive(bool activate = true) 
+	{
+		bool res = (active != activate);
+		active = activate;
+		return res;
+	}
 	bool isActive() const { return active; }
 private:
 	std::string name;
@@ -60,7 +67,11 @@ class FeatureList: public std::vector<Feature *>
 public:
 	mtime_t formSelectedIntervals(std::map<mtime_t, Interval> &res, mtime_t len);
 	~FeatureList();
-	void appendUnmarked(bool append = true) { markedOnly = !append;}
+	bool appendUnmarked(bool unmarked) {
+		bool res = (markedOnly == unmarked);
+		markedOnly = !unmarked;
+		return res;
+	}
 private:
 	bool markedOnly;
 
