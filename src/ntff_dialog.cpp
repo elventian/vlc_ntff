@@ -15,6 +15,12 @@ class Widget
 public:
 	extension_widget_t *getPtr() { return widget; }
 	const char *getText() const { return widget->psz_text; }
+	void updateText(const std::string &text)
+	{
+		delete widget->psz_text;
+		setText(text);
+		widget->b_update = true;
+	}
 protected:
 	void setText(const std::string &text) 
 	{
@@ -190,6 +196,9 @@ Dialog::Dialog(Player *player, FeatureList *featureList) :
 	unmarked = new UnmarkedIntervalsWidget(dialog, row++);
 	appendWidgets(unmarked->getWidgets());
 	
+	playLength = new Label(dialog, formatTime(player->getLength()), row++, 0);
+	widgets.push_back(playLength);
+	
 	ok = new Button(dialog, "OK", row, 0);
 	widgets.push_back(ok);
 	
@@ -259,6 +268,17 @@ void Dialog::done()
 	player->setIntervalsSelected();
 }
 
+std::string Dialog::formatTime(mtime_t time) const //copied from StreamTime::formatTime
+{
+	int seconds = time / 1000000;
+	char psz_time[MSTRTIME_MAX_SIZE];
+	snprintf( psz_time, MSTRTIME_MAX_SIZE, "%d:%02d:%02d",
+			  (int) (seconds / (60 * 60)),
+			  (int) (seconds / 60 % 60),
+			  (int) (seconds % 60) );
+    return std::string(psz_time);
+}
+
 int Dialog::getMaxColumn() const
 {
 	int res = 0;
@@ -290,6 +310,8 @@ void Dialog::updateLength()
 	if (updateFeatures())
 	{
 		player->updatePlayIntervals();
+		playLength->updateText(formatTime(player->getLength()));
+		vlc_ext_dialog_update(player->getVlcObj(), dialog);
 	}
 }
 

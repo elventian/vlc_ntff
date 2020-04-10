@@ -18,6 +18,7 @@ class FeatureList;
 class FeatureWidget;
 class Widget;
 class Button;
+class Label;
 class UnmarkedIntervalsWidget;
 
 class Dialog
@@ -39,6 +40,7 @@ private:
 	UnmarkedIntervalsWidget *unmarked;
 	Button *ok;
 	Button *cancel;
+	Label *playLength;
 	bool shown;
 	vlc_timer_t updateLengthTimer;
 	bool timerOk;
@@ -47,6 +49,7 @@ private:
 	bool updateFeatures();
 	void appendWidgets(const std::list<Widget *> &other);
 	void done();
+	std::string formatTime(mtime_t time) const;
 };
 
 }

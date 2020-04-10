@@ -35,6 +35,7 @@ public:
 	void showDialog();
 	void hideDialog();
 	mtime_t getGlobalTime() const;
+	mtime_t getLength() const { return length; }
 private:
 	demux_t *obj;
 	FeatureList *featureList;
