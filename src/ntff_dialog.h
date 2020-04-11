@@ -19,7 +19,8 @@ class FeatureWidget;
 class Widget;
 class Button;
 class Label;
-class UnmarkedIntervalsWidget;
+class ComplexWidget;
+class UserAction;
 
 class Dialog
 {
@@ -37,17 +38,17 @@ private:
 	std::string name;
 	std::list<Widget *> widgets;
 	std::map<FeatureWidget *, Feature*> features;
-	UnmarkedIntervalsWidget *unmarked;
 	Button *ok;
 	Button *cancel;
 	Label *playLength;
 	bool shown;
 	vlc_timer_t updateLengthTimer;
 	bool timerOk;
+	UserAction *beginAction;
 	
 	int getMaxColumn() const;
 	bool updateFeatures();
-	void appendWidgets(const std::list<Widget *> &other);
+	void appendWidgets(ComplexWidget *src);
 	void done();
 	std::string formatTime(mtime_t time) const;
 };

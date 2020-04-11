@@ -12,6 +12,7 @@ namespace Ntff {
 
 class Widget
 {
+	friend class ComplexWidget;
 public:
 	extension_widget_t *getPtr() { return widget; }
 	const char *getText() const { return widget->psz_text; }
@@ -35,7 +36,7 @@ protected:
 		widget->type = type;
 		setText(text); 
 		widget->i_row = row + 1; //+1: row and column id should start from 1
-		widget->i_column = column + 1;
+		widget->i_column = (column == -1) ? -1 : column + 1;
 		widget->p_dialog = dialog;
 	}
 	extension_widget_t *widget;
@@ -44,15 +45,21 @@ protected:
 class Label: public Widget
 {
 public:
-	Label(extension_dialog_t *dialog, const std::string &text, int row, int column):
-		Widget(dialog, EXTENSION_WIDGET_LABEL, text, row, column) 
-	{}
+	Label(extension_dialog_t *dialog, const std::string &text, int row, int column = -1):
+		Widget(dialog, EXTENSION_WIDGET_LABEL, text, row, column), text(text) {}
+	
+	void setColor(const std::string &hashCode)
+	{
+		setText("<font color=\"" + hashCode + "\">" + text + "</font>");
+	}
+private:
+	std::string text;
 };
 
 class Checkbox: public Widget
 {
 public:
-	Checkbox(extension_dialog_t *dialog, const std::string &text, bool checked, int row, int column):
+	Checkbox(extension_dialog_t *dialog, const std::string &text, bool checked, int row, int column = -1):
 		Widget(dialog, EXTENSION_WIDGET_CHECK_BOX, text, row, column) 
 	{
 		widget->b_checked = checked;
@@ -64,10 +71,30 @@ public:
 class Combobox: public Widget
 {
 public:
-	Combobox(extension_dialog_t *dialog, const std::string &text, int row, int column, 
-		const std::set<std::string> &values):
+	Combobox(extension_dialog_t *dialog, const std::string &text, const std::vector<std::string> &values, 
+		int row, int column = -1):
 		Widget(dialog, EXTENSION_WIDGET_DROPDOWN, text, row, column)
 	{
+		fillValues(values);
+	}
+	
+	int getSelectedId() const
+	{
+		extension_widget_t::extension_widget_value_t *cur = widget->p_values;
+		while (cur)
+		{
+			if (strcmp(cur->psz_text, widget->psz_text) == 0)
+			{
+				return cur->i_id;
+			}
+			cur = cur->p_next;
+		}
+		return 0;
+	}
+protected:
+	void fillValues(const std::vector<std::string> &values)
+	{
+		if (values.empty()) { widget->p_values = nullptr; return; }
 		widget->p_values = new extension_widget_t::extension_widget_value_t[values.size()];
 		unsigned int id = 0;
 		for (const std::string &value: values)
@@ -85,7 +112,7 @@ public:
 class Button: public Widget
 {
 	public: 
-	Button(extension_dialog_t *dialog, const std::string &text, int row, int column):
+	Button(extension_dialog_t *dialog, const std::string &text, int row, int column = -1):
 		Widget(dialog, EXTENSION_WIDGET_BUTTON, text, row, column) {}
 };
 
@@ -97,7 +124,29 @@ protected:
 	ComplexWidget() {}
 	std::list<Widget *> widgets;
 	int getWidgetsNum() const { return widgets.size(); }
-	void addWidget(Widget *w) { widgets.push_back(w); }
+	void addWidget(Widget *w) {
+		if (w->widget->i_column == -1) 
+		{ 
+			w->widget->i_column = widgets.size() + 1; 
+		}
+		widgets.push_back(w); 
+	}
+};
+
+class UserAction: public Combobox
+{
+public:
+	enum Action {Add, Remove};
+	UserAction(extension_dialog_t *dialog, Action selected, int row, int column = -1):
+		Combobox(dialog, "", std::vector<std::string>(), row, column)
+	{
+		std::vector<std::string> values;
+		values.push_back("add");
+		values.push_back("remove");
+		fillValues(values);
+		setText(values[selected]);
+	}
+	Action getAction() const { return (Action)getSelectedId(); }
 };
 
 class FeatureWidget: public ComplexWidget
@@ -105,51 +154,62 @@ class FeatureWidget: public ComplexWidget
 public:
 	FeatureWidget(extension_dialog_t *dialog, const Feature *feature, int row)
 	{
-		addWidget(new Label(dialog, feature->getName(), row, getWidgetsNum()));
+		addWidget(new Label(dialog, "then", row));
 		
-		active = new Checkbox(dialog, feature->getName(), true, row, getWidgetsNum());
-		addWidget(active);
+		action = new UserAction(dialog, UserAction::Add, row);
+		addWidget(action);
 		
-		addWidget(new Label(dialog, "min: " , row, getWidgetsNum()));
+		name = new Label(dialog, feature->getName(), row);
+		addWidget(name);
+		updateNameColor();
 		
-		std::string recMin = std::to_string(feature->getRecommendedMin());
-		intensityMin = new Combobox(dialog, recMin, 
-			row, getWidgetsNum(), feature->getIntervalsIntensity());
-		addWidget(intensityMin);
+		addWidget(new Label(dialog, "with value", row));
 		
-		addWidget(new Label(dialog, "max: " , row, getWidgetsNum()));
+		std::vector<std::string> eqStr;
+		eqStr.push_back("<");
+		eqStr.push_back(">");
+		eqStr.push_back("≤");
+		eqStr.push_back("≥");
+		equality = new Combobox(dialog, eqStr[2], eqStr, row);
+		addWidget(equality);
 		
-		std::string recMax = std::to_string(feature->getRecommendedMax());
-		intensityMax = new Combobox(dialog, recMax, 
-			row, getWidgetsNum(), feature->getIntervalsIntensity());
-		addWidget(intensityMax);
+		value = new Combobox(dialog, std::to_string(feature->getRecommendedMin()), 
+			feature->getIntervalsIntensity(), row);
+		addWidget(value);
+		
+		affectRelated = new Checkbox(dialog, "", false, row);
+		addWidget(affectRelated);
+		relatedStr = new Label(dialog, "and not related", row);
+		addWidget(relatedStr);
+		updateRelatedColor();
 	}
 	
 	void getSelectedIntensity(int8_t &min, int8_t &max)
 	{
-		min = (int8_t)atoi(intensityMin->getText());
-		max = (int8_t)atoi(intensityMax->getText());
+		//min = (int8_t)atoi(intensityMin->getText());
+		//max = (int8_t)atoi(intensityMax->getText());
 	}
 	
-	bool isActive() const { return active->isChecked(); }
-private:
-	Combobox *intensityMin;
-	Combobox *intensityMax;
-	Checkbox *active;
-};
-
-class UnmarkedIntervalsWidget: public ComplexWidget
-{
-public:
-	UnmarkedIntervalsWidget(extension_dialog_t *dialog, int row)
+	bool isActive() const { return true; /*active->isChecked();*/ }
+	
+	void updateNameColor()
 	{
-		addWidget(new Label(dialog, "Other", row, getWidgetsNum()));
-		active = new Checkbox(dialog, "", true, row, getWidgetsNum());
-		addWidget(active);
+		if (action->getAction() == UserAction::Add) { name->setColor("#239b56");}
+		else { name->setColor("#ff495a");}
 	}
-	bool isActive() const { return active->isChecked(); }
+	
+	void updateRelatedColor()
+	{
+		if (affectRelated->isChecked()) { relatedStr->setColor("#000000");}
+		else { relatedStr->setColor("#abb2b9");}
+	}
 private:
-	Checkbox *active;
+	Label *name;
+	UserAction *action;
+	Combobox *equality;
+	Combobox *value;
+	Checkbox *affectRelated;
+	Label *relatedStr;
 };
 
 static int DialogCallback(vlc_object_t *, char const *, vlc_value_t, vlc_value_t newval, void *data)
@@ -183,27 +243,32 @@ Dialog::Dialog(Player *player, FeatureList *featureList) :
 	dialog->b_kill = false;
 	
 	int row = 0;
+	
+	widgets.push_back(new Label(dialog, "First, ", row, 0));
+	beginAction = new UserAction(dialog, UserAction::Add, row, 1);
+	widgets.push_back(beginAction);
+	widgets.push_back(new Label(dialog, "everything", row, 2));
+	
+	row++;
+	
 	for (Feature *feature: *featureList)
 	{
 		FeatureWidget *fwidget = new FeatureWidget(dialog, feature, row);
 		features[fwidget] = feature;
-		widgets.insert(widgets.end(), fwidget->getWidgets().begin(), fwidget->getWidgets().end());
+		appendWidgets(fwidget);
 		row++;
 		
 		msg_Dbg(player->getVlcObj(), "~~~~~feature name len = %li", feature->getName().size());
 	}
 	
-	unmarked = new UnmarkedIntervalsWidget(dialog, row++);
-	appendWidgets(unmarked->getWidgets());
-	
 	playLength = new Label(dialog, formatTime(player->getLength()), row++, 0);
 	widgets.push_back(playLength);
 	
-	ok = new Button(dialog, "OK", row, 0);
-	widgets.push_back(ok);
-	
-	cancel = new Button(dialog, "Cancel", row, getMaxColumn());
+	cancel = new Button(dialog, "Cancel", row, 0);
 	widgets.push_back(cancel);
+	
+	ok = new Button(dialog, "OK", row, getMaxColumn());
+	widgets.push_back(ok);
 	
 	dialog->widgets.i_size = widgets.size();
 	dialog->widgets.p_elems = new extension_widget_t *[dialog->widgets.i_size];
@@ -257,9 +322,9 @@ void Dialog::close()
 	}
 }
 
-void Dialog::appendWidgets(const std::list<Widget *> &other) 
+void Dialog::appendWidgets(ComplexWidget *src) 
 {
-	widgets.insert(widgets.end(), other.begin(), other.end());
+	widgets.insert(widgets.end(), src->getWidgets().begin(), src->getWidgets().end());
 }
 
 void Dialog::done()
@@ -301,7 +366,6 @@ bool Dialog::updateFeatures()
 		updated |= feature->setSelected(min, max);
 		updated |= feature->setActive(widget->isActive());
 	}
-	updated |= featureList->appendUnmarked(unmarked->isActive());
 	return updated;
 }
 

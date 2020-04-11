@@ -25,14 +25,14 @@ bool Feature::isActive(const Interval &interval) const
 	return interval.intensity >= selectedMin && interval.intensity <= selectedMax;
 }
 
-std::set<std::string> Feature::getIntervalsIntensity() const
+std::vector<std::string> Feature::getIntervalsIntensity() const
 {
 	std::set<std::string> res;
 	for (const Interval &interval: intervals)
 	{
 		res.insert(std::to_string((int)interval.intensity));
 	}
-	return res;
+	return std::vector<std::string>(res.begin(), res.end());
 }
 
 std::ostream &operator<<(std::ostream &out, const Feature &item)

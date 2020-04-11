@@ -6,6 +6,7 @@
 #include <vector>
 #include <map>
 #include <set>
+#include <list>
 #include <vlc_common.h>
 
 namespace Ntff {
@@ -32,7 +33,7 @@ public:
 	bool isActive(const Interval &interval) const;
 	const std::string &getName() const { return name; }
 	const std::string &getDescription() const { return description; }
-	std::set<std::string> getIntervalsIntensity() const;
+	std::vector<std::string> getIntervalsIntensity() const;
 	int8_t getRecommendedMin() const { return recMin; }
 	int8_t getRecommendedMax() const { return recMax; }
 	bool setSelected(int8_t min, int8_t max)
