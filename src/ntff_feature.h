@@ -25,58 +25,34 @@ struct Interval
 
 class Feature
 {
-	friend std::ostream &operator<<(std::ostream &out, const Feature &item);
 public:
-	Feature(const std::string &name, const std::string &description, int recMin, int recMax);
+	Feature(const std::string &name, const std::string &description, 
+		const std::string &recAction, const std::string &recEq, int8_t recIntensity);
 	void appendInterval(const Interval &interval);
 	const std::vector<Interval> &getIntervals() const { return intervals; }
-	bool isActive(const Interval &interval) const;
 	const std::string &getName() const { return name; }
 	const std::string &getDescription() const { return description; }
+	const std::string &getAction() const { return recAction; }
+	const std::string &getEq() const { return recEq; }
+	int8_t getRecIntensity() const { return recIntensity; }
 	std::vector<std::string> getIntervalsIntensity() const;
-	int8_t getRecommendedMin() const { return recMin; }
-	int8_t getRecommendedMax() const { return recMax; }
-	bool setSelected(int8_t min, int8_t max)
-	{
-		bool res = (selectedMin != min || selectedMax != max);
-		selectedMin = min;
-		selectedMax = max;
-		return res;
-	}
-	bool setActive(bool activate = true) 
-	{
-		bool res = (active != activate);
-		active = activate;
-		return res;
-	}
-	bool isActive() const { return active; }
 private:
 	std::string name;
 	std::string description;
+	int8_t recIntensity;
+	std::string recAction;
+	std::string recEq;
 	int8_t min;
 	int8_t max;
-	int8_t recMin;
-	int8_t recMax;
-	int8_t selectedMin;
-	int8_t selectedMax;
-	bool active;
 	std::vector<Interval> intervals;
 };
 
 class FeatureList: public std::vector<Feature *>
 {
 public:
-	mtime_t formSelectedIntervals(std::map<mtime_t, Interval> &res, mtime_t len);
 	~FeatureList();
-	bool appendUnmarked(bool unmarked) {
-		bool res = (markedOnly == unmarked);
-		markedOnly = !unmarked;
-		return res;
-	}
 	static void insertInterval(std::map<mtime_t, Interval> &container, const Interval& interval);
 	static void removeInterval(std::map<mtime_t, Interval> &container, const Interval& interval);
-private:
-	bool markedOnly;
 };
 
 }

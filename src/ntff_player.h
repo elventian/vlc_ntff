@@ -21,7 +21,6 @@ public:
 	void addFile(const Interval &interval, const std::string &filename);
 	int play();
 	int control(int query, va_list args);
-	void reset();
 	void seek(double pos);
 	void setPause(bool pause) const;
 	
@@ -30,7 +29,6 @@ public:
 	mtime_t getFrameLen() const;
 	int getFrameId(mtime_t timeInItem) const;
 	int getCurIntervalFirstFrame() const;
-	void updatePlayIntervals();
 	void setIntervalsSelected();
 	void showDialog();
 	void hideDialog();

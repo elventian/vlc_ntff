@@ -257,8 +257,8 @@ FeatureTrack::FeatureTrack(xml_reader_t *reader): feature(nullptr), playlist(nul
 	bool empty = xml_ReaderIsEmptyElement(reader);
 	std::string node(nodeC);
 	
-	std::string name, description;
-	int recMin = 0, recMax = 0;
+	std::string name, description, recAction, recEq;
+	int recIntensity = 0;
 	bool isFeature = false;
 	
 	do
@@ -272,13 +272,9 @@ FeatureTrack::FeatureTrack(xml_reader_t *reader): feature(nullptr), playlist(nul
 			const char *data;
 			xml_ReaderNextNode(reader, &data);
 			
-			if (property == "kdenlive:feature_rec_min")
+			if (property == "kdenlive:feature_rec_intensity")
 			{
-				recMin = atoi(data);
-			}
-			else if (property == "kdenlive:feature_rec_max")
-			{
-				recMax = atoi(data);
+				recIntensity = atoi(data);
 			}
 			else if (property == "kdenlive:track_name")
 			{
@@ -291,6 +287,14 @@ FeatureTrack::FeatureTrack(xml_reader_t *reader): feature(nullptr), playlist(nul
 			else if (property == "kdenlive:feature_track")
 			{
 				isFeature = true;
+			}
+			else if (property == "kdenlive:feature_rec_action")
+			{
+				recAction = std::string(data);
+			}
+			else if (property == "kdenlive:feature_rec_eq")
+			{
+				recEq = std::string(data);
 			}
 			
 #ifdef DEBUG_PROJECT_PARSING		
@@ -318,7 +322,7 @@ FeatureTrack::FeatureTrack(xml_reader_t *reader): feature(nullptr), playlist(nul
 	
 	if (isFeature)
 	{
-		feature  = new Feature(name, description, recMin, recMax);
+		feature  = new Feature(name, description, recAction, recEq, recIntensity);
 	}
 	
 #ifdef DEBUG_PROJECT_PARSING		
@@ -510,14 +514,6 @@ FeatureList *Project::generateFeatureList() const
 		flist->push_back(feature);
 	}
 	
-	std::stringstream ss;
-	ss << "~~~~Features num: " << flist->size() << std::endl; 
-	for (Ntff::Feature *f: *flist)
-	{
-		ss << "~~~~~~" << *f;
-	}
-	msg_Dbg(obj, "%s", ss.str().c_str());
-	
 	return flist;
 }
 
@@ -528,7 +524,6 @@ Player *Project::createPlayer(demux_t *demux) const
 	{
 		player->addFile(entry.getInterval(), entry.getResource());
 	}
-	player->reset();
 	return player;
 }
 

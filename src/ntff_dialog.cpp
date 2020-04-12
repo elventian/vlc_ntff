@@ -8,6 +8,7 @@
 #include <list>
 #include <set>
 #include <limits>
+#include <algorithm>
 
 namespace Ntff {
 
@@ -173,6 +174,11 @@ public:
 		setText(values[selected]);
 	}
 	Action getAction() const { return (Action)getSelectedId(); }
+	static Action fromStr(const std::string &action)
+	{
+		if (action == "add") { return Add; }
+		return Remove;
+	}
 };
 
 class FeatureWidget: public ComplexWidget
@@ -183,7 +189,7 @@ public:
 	{
 		addWidget(new Label(dialog, "then", row));
 		
-		action = new UserAction(dialog, UserAction::Add, row);
+		action = new UserAction(dialog, UserAction::fromStr(feature->getAction()), row);
 		addWidget(action);
 		
 		addWidget(new Label(dialog, "intervals where", row));
@@ -197,10 +203,13 @@ public:
 		eqStr.push_back(">");
 		eqStr.push_back("≤");
 		eqStr.push_back("≥");
-		equality = new Combobox(dialog, eqStr[2], eqStr, row);
+		std::string eq = (std::find(eqStr.begin(), eqStr.end(), feature->getEq()) != eqStr.end()) ? 
+			feature->getEq() : eqStr[0];
+		
+		equality = new Combobox(dialog, eq, eqStr, row);
 		addWidget(equality);
 		
-		value = new Combobox(dialog, std::to_string(feature->getRecommendedMin()), 
+		value = new Combobox(dialog, std::to_string(feature->getRecIntensity()), 
 			feature->getIntervalsIntensity(), row);
 		addWidget(value);
 		
@@ -229,7 +238,6 @@ public:
 		}
 	}
 	
-	bool isActive() const { return true; /*active->isChecked();*/ }
 	bool update()
 	{
 		bool res = false;
@@ -412,10 +420,6 @@ bool Dialog::updatedFeatures()
 	{
 		FeatureWidget *widget = p.first;
 		if (widget->update()) { updated = true; }
-		/*int8_t min, max;
-		widget->getSelectedIntensity(min, max);
-		updated |= feature->setSelected(min, max);
-		updated |= feature->setActive(widget->isActive());*/
 	}
 	return updated;
 }

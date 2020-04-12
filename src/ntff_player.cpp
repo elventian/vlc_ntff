@@ -58,7 +58,9 @@ void Player::addFile(const Interval &interval, const std::string &filename)
 {
 	out->reuseStreams();
 	items[interval.in] = Item((vlc_object_t *)obj, interval, out->getWrapperStream(), filename);
-	wholeDuration = interval.out;
+	length = wholeDuration = interval.out;
+	playIntervals[0] = Interval(0, wholeDuration);
+	curInterval = playIntervals.begin();
 }
 
 bool Player::timeIsInPlayInterval(mtime_t time) const
@@ -87,44 +89,8 @@ int Player::getCurIntervalFirstFrame() const
 	return getFrameId(timeInItem);
 }
 
-void Player::updatePlayIntervals()
-{
-	if (items.size() == 0) return;
-	
-	msg_Dbg(obj, "updatePlayIntervals");
-	
-	vlc_mutex_lock(&intervalsMutex);
-	
-	Item &lastItem  = items.rbegin()->second;
-	length = featureList->formSelectedIntervals(playIntervals, lastItem.getInterval().out); //TODO: split intervals in between files
-	
-	//var_SetInteger(obj->p_input, "length", length);
-	
-	if (savedTime)
-	{
-		auto closestIt = playIntervals.lower_bound(savedTime);
-		if (closestIt == playIntervals.end()) 
-		{
-			closestIt = playIntervals.begin(); 
-		}
-		else if (closestIt != playIntervals.begin())
-		{
-			closestIt--; //select prev interval, if it contains our timestamp
-			if (closestIt->second.out <= savedTime)
-			{
-				closestIt++;
-			}
-		}
-		curInterval = closestIt;
-	}
-	else { curInterval = playIntervals.begin(); }
-	
-	vlc_mutex_unlock(&intervalsMutex);
-}
-
 void Player::setIntervalsSelected()
 {
-	//reset();
 	Interval &newInterval = curInterval->second;
 	mtime_t newTime = newInterval.contains(savedTime) ? savedTime : newInterval.in;
 	
@@ -411,19 +377,6 @@ int Player::control(int query, va_list args)
 			return VLC_EGENERIC;
 
         default: return VLC_EGENERIC;
-	}
-}
-
-void Player::reset()
-{
-	updatePlayIntervals();
-	curInterval = playIntervals.begin();
-	skipToCurInterval();
-	
-	msg_Dbg(obj, "~~~~Player Items: %li", items.size());
-	for (auto p: items)
-	{
-		msg_Dbg(obj, "~~~~item length: %li - %li", p.second.getInterval().in, p.second.getInterval().out);
 	}
 }
 
