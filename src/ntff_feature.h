@@ -29,7 +29,7 @@ class Feature
 public:
 	Feature(const std::string &name, const std::string &description, int recMin, int recMax);
 	void appendInterval(const Interval &interval);
-	const std::vector<Interval> &getIntervals() { return intervals; }
+	const std::vector<Interval> &getIntervals() const { return intervals; }
 	bool isActive(const Interval &interval) const;
 	const std::string &getName() const { return name; }
 	const std::string &getDescription() const { return description; }
@@ -73,10 +73,10 @@ public:
 		markedOnly = !unmarked;
 		return res;
 	}
+	static void insertInterval(std::map<mtime_t, Interval> &container, const Interval& interval);
+	static void removeInterval(std::map<mtime_t, Interval> &container, const Interval& interval);
 private:
 	bool markedOnly;
-
-	void insertInterval(std::map<mtime_t, Interval> &container, const Interval& interval) const;
 };
 
 }

@@ -45,9 +45,10 @@ private:
 	vlc_timer_t updateLengthTimer;
 	bool timerOk;
 	UserAction *beginAction;
+	bool init;
 	
 	int getMaxColumn() const;
-	bool updateFeatures();
+	bool updatedFeatures();
 	void appendWidgets(ComplexWidget *src);
 	void done();
 	std::string formatTime(mtime_t time) const;

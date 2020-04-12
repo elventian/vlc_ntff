@@ -7,6 +7,7 @@
 #include <vlc_threads.h>
 #include <list>
 #include <set>
+#include <limits>
 
 namespace Ntff {
 
@@ -16,17 +17,30 @@ class Widget
 public:
 	extension_widget_t *getPtr() { return widget; }
 	const char *getText() const { return widget->psz_text; }
+	int getValue() const { return atoi(widget->psz_text); }
 	void updateText(const std::string &text)
 	{
 		delete widget->psz_text;
 		setText(text);
 		widget->b_update = true;
 	}
+	int getRow() const { return widget->i_row; }
+	virtual bool changed()
+	{
+		if (strcmp(prevText.c_str(), widget->psz_text) != 0)
+		{
+			prevText = std::string(widget->psz_text);
+			return true;
+		}
+		return false;
+	}
 protected:
 	void setText(const std::string &text) 
 	{
 		widget->psz_text = new char[text.size() + 1];
 		strcpy(widget->psz_text, text.c_str());
+		prevText = text;
+		widget->b_update = true;
 	}
 	
 	Widget(extension_dialog_t *dialog, extension_widget_type_e type, 
@@ -40,6 +54,7 @@ protected:
 		widget->p_dialog = dialog;
 	}
 	extension_widget_t *widget;
+	std::string prevText;
 };
 
 class Label: public Widget
@@ -63,9 +78,20 @@ public:
 		Widget(dialog, EXTENSION_WIDGET_CHECK_BOX, text, row, column) 
 	{
 		widget->b_checked = checked;
+		prevChecked = checked;
 	}
-	
 	bool isChecked() const { return widget->b_checked; }
+	bool changed() override
+	{
+		if (prevChecked != widget->b_checked)
+		{
+			prevChecked = widget->b_checked;
+			return true;
+		}
+		return false;
+	}
+private:
+	bool prevChecked;
 };
 
 class Combobox: public Widget
@@ -152,6 +178,7 @@ public:
 class FeatureWidget: public ComplexWidget
 {
 public:
+	enum {Less, More, LessOrEq, MoreOrEq};
 	FeatureWidget(extension_dialog_t *dialog, const Feature *feature, int row)
 	{
 		addWidget(new Label(dialog, "then", row));
@@ -159,11 +186,11 @@ public:
 		action = new UserAction(dialog, UserAction::Add, row);
 		addWidget(action);
 		
+		addWidget(new Label(dialog, "intervals where", row));
+		
 		name = new Label(dialog, feature->getName(), row);
 		addWidget(name);
 		updateNameColor();
-		
-		addWidget(new Label(dialog, "with value", row));
 		
 		std::vector<std::string> eqStr;
 		eqStr.push_back("<");
@@ -177,20 +204,51 @@ public:
 			feature->getIntervalsIntensity(), row);
 		addWidget(value);
 		
-		affectRelated = new Checkbox(dialog, "", false, row);
-		addWidget(affectRelated);
-		relatedStr = new Label(dialog, "and not related", row);
-		addWidget(relatedStr);
-		updateRelatedColor();
+		unmarked = new Checkbox(dialog, "", false, row);
+		addWidget(unmarked);
+		unmarkedLabel = new Label(dialog, "or not set", row);
+		addWidget(unmarkedLabel);
+		updateUnmarkedColor();
 	}
 	
 	void getSelectedIntensity(int8_t &min, int8_t &max)
 	{
-		//min = (int8_t)atoi(intensityMin->getText());
-		//max = (int8_t)atoi(intensityMax->getText());
+		int eq = equality->getSelectedId();
+		int8_t intensity = (int8_t)value->getValue();
+		if (eq == Less || eq == LessOrEq)
+		{
+			min = std::numeric_limits<int8_t>::min();
+			max = intensity;
+			if (eq == Less) { max--; }
+		}
+		else
+		{
+			max = std::numeric_limits<int8_t>::max();
+			min = intensity;
+			if (eq == More) { min++; }
+		}
 	}
 	
 	bool isActive() const { return true; /*active->isChecked();*/ }
+	bool update()
+	{
+		bool res = false;
+		if (action->changed()) { updateNameColor(); res = true; }
+		if (unmarked->changed()) { updateUnmarkedColor(); res = true;}
+		if (equality->changed()) { res = true; }
+		if (value->changed()) { res = true;}
+		return res;
+	}
+	int getRow() const { return name->getRow(); }
+	bool addCmd() const { return action->getAction() == UserAction::Add; }
+	bool affectUnmarked() const { return unmarked->isChecked(); }
+private:
+	Label *name;
+	UserAction *action;
+	Combobox *equality;
+	Combobox *value;
+	Checkbox *unmarked;
+	Label *unmarkedLabel;
 	
 	void updateNameColor()
 	{
@@ -198,18 +256,11 @@ public:
 		else { name->setColor("#ff495a");}
 	}
 	
-	void updateRelatedColor()
+	void updateUnmarkedColor()
 	{
-		if (affectRelated->isChecked()) { relatedStr->setColor("#000000");}
-		else { relatedStr->setColor("#abb2b9");}
+		if (unmarked->isChecked()) { unmarkedLabel->setColor("#000000");}
+		else { unmarkedLabel->setColor("#abb2b9");}
 	}
-private:
-	Label *name;
-	UserAction *action;
-	Combobox *equality;
-	Combobox *value;
-	Checkbox *affectRelated;
-	Label *relatedStr;
 };
 
 static int DialogCallback(vlc_object_t *, char const *, vlc_value_t, vlc_value_t newval, void *data)
@@ -231,7 +282,7 @@ static int DialogCallback(vlc_object_t *, char const *, vlc_value_t, vlc_value_t
 
 
 Dialog::Dialog(Player *player, FeatureList *featureList) : 
-	player(player), featureList(featureList), shown(false)
+	player(player), featureList(featureList), shown(false), init(true)
 {
 	name = "Ntff Settings";
 	dialog = new extension_dialog_t();
@@ -244,7 +295,7 @@ Dialog::Dialog(Player *player, FeatureList *featureList) :
 	
 	int row = 0;
 	
-	widgets.push_back(new Label(dialog, "First, ", row, 0));
+	widgets.push_back(new Label(dialog, "First", row, 0));
 	beginAction = new UserAction(dialog, UserAction::Add, row, 1);
 	widgets.push_back(beginAction);
 	widgets.push_back(new Label(dialog, "everything", row, 2));
@@ -287,7 +338,7 @@ void Dialog::buttonPressed(extension_widget_t *widgetPtr)
 {
 	if (widgetPtr == ok->getPtr()) //confirm
 	{
-		updateFeatures();
+		updatedFeatures();
 		done();
 	}
 	else if (widgetPtr == cancel->getPtr()) //cancel
@@ -354,28 +405,49 @@ int Dialog::getMaxColumn() const
 	return res - 1;
 }
 
-bool Dialog::updateFeatures()
+bool Dialog::updatedFeatures()
 {
 	bool updated = false;
 	for (auto p: features)
 	{
 		FeatureWidget *widget = p.first;
-		Feature *feature = p.second;
-		int8_t min, max;
+		if (widget->update()) { updated = true; }
+		/*int8_t min, max;
 		widget->getSelectedIntensity(min, max);
 		updated |= feature->setSelected(min, max);
-		updated |= feature->setActive(widget->isActive());
+		updated |= feature->setActive(widget->isActive());*/
 	}
 	return updated;
 }
 
 void Dialog::updateLength()
 {
-	if (updateFeatures())
+	bool beginWithChanged = beginAction->changed();
+	if (updatedFeatures() || beginWithChanged || init)
 	{
-		player->updatePlayIntervals();
-		playLength->updateText(formatTime(player->getLength()));
+		init = false;
+		player->lockIntervals(true);
+		player->resetIntervals(beginAction->getAction() == UserAction::Remove);
+		std::map<int, FeatureWidget *> orderedFeatures;
+		for (auto p: features)
+		{
+			FeatureWidget *widget = p.first;
+			orderedFeatures[widget->getRow()] = widget;
+		}
+		
+		for (auto p: orderedFeatures)
+		{
+			FeatureWidget *widget = p.second;
+			int8_t min, max;
+			widget->getSelectedIntensity(min, max);
+			player->modifyIntervals(widget->addCmd(), features[widget], min, max, widget->affectUnmarked());
+		}
+		
+		mtime_t length = player->recalcLength();
+		playLength->updateText(formatTime(length));
 		vlc_ext_dialog_update(player->getVlcObj(), dialog);
+		player->updateCurrentInterval();
+		player->lockIntervals(false);
 	}
 }
 

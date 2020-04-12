@@ -108,36 +108,75 @@ FeatureList::~FeatureList()
 	}
 }
 
-void FeatureList::insertInterval(std::map<mtime_t, Interval> &container, const Interval &interval) const
+void FeatureList::insertInterval(std::map<mtime_t, Interval> &container, const Interval &interval)
 {
-	auto it = container.lower_bound(interval.in);
-	if (it == container.end())
-	{
-		container[interval.in] = interval;
-	}
-	else
-	{
-		Interval selected = it->second; //next after interval
-		if (interval.out >= selected.in)
-		{
-			selected.in = interval.in;
-			selected.out = std::max(interval.out, selected.out);
-			container[interval.in] = selected;
-			container.erase(it->first);
-			return;
-		}
+	if (container.empty()) { container[interval.in] = interval; return; }
+	
+	Interval res = interval;
 		
-		if (it != container.begin()) //prev
+	auto faffected = container.lower_bound(interval.in);
+	if (faffected == container.end() || 
+		(faffected->second.in > interval.in && faffected != container.begin())) //maybe need change prev
+	{
+		faffected--;
+		if (faffected->second.out > interval.in) { res.in = faffected->second.in; }
+		res.out = std::max(res.out, faffected->second.out);
+		faffected++;
+	}
+	
+	auto laffected = container.lower_bound(interval.out);
+	if (laffected != container.end() && laffected->second.in == interval.out)
+	{
+		res.out = laffected->second.out;
+		laffected++;
+	}
+	else if (laffected != container.begin())
+	{
+		laffected--;
+		res.out = std::max(res.out, laffected->second.out);
+		laffected++;
+	}
+	container.erase(faffected, laffected);
+	container[res.in] = res;
+}
+
+void FeatureList::removeInterval(std::map<mtime_t, Interval> &container, const Interval &interval)
+{
+	if (container.empty()) { return; }
+		
+	auto faffected = container.upper_bound(interval.in);  //maybe need change .out of prev
+	faffected--;
+	Interval &fint = faffected->second;
+	bool done = false;
+	if (fint.out > interval.out) 
+	{
+		container[interval.out] = Interval(interval.out, fint.out);
+		done = true;
+	}
+	if (fint.out > interval.in) 
+	{
+		fint.out = interval.in; 
+	}
+	faffected++;
+	if (fint.length() == 0) { container.erase(fint.in); }
+	if (done) { return; }
+	
+	auto laffected = container.lower_bound(interval.out);
+	Interval shortened;
+	if (laffected != container.begin()) //maybe need change .in of prev
+	{
+		laffected--;
+		if (laffected->second.out > interval.out) 
 		{
-			it--;
-			Interval &selected = it->second;
-			if (interval.in <= selected.out)
-			{
-				if (interval.out > selected.out) { selected.out = interval.out; }
-				return;
-			}
+			shortened = laffected->second;
+			shortened.in = interval.in;
 		}
-		container[interval.in] = interval;
+		laffected++;
+	}
+	container.erase(faffected, laffected);
+	if (shortened.length() != 0)
+	{
+		container[shortened.in] = shortened;
 	}
 }
 

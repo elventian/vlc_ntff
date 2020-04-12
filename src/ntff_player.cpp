@@ -58,6 +58,7 @@ void Player::addFile(const Interval &interval, const std::string &filename)
 {
 	out->reuseStreams();
 	items[interval.in] = Item((vlc_object_t *)obj, interval, out->getWrapperStream(), filename);
+	wholeDuration = interval.out;
 }
 
 bool Player::timeIsInPlayInterval(mtime_t time) const
@@ -118,13 +119,6 @@ void Player::updatePlayIntervals()
 	}
 	else { curInterval = playIntervals.begin(); }
 	
-	msg_Dbg(obj, "~~~~Player Intervals: %li", playIntervals.size());
-	for (auto p: playIntervals)
-	{
-		msg_Dbg(obj, "~~~~interval: %li - %li", p.second.in, p.second.out);
-	}
-	msg_Dbg(obj, "Player frames in cur: %i", framesInPlayInterval());
-	
 	vlc_mutex_unlock(&intervalsMutex);
 }
 
@@ -157,6 +151,86 @@ void Player::hideDialog()
 mtime_t Player::getGlobalTime() const
 {
 	return getCurInterval().in + out->getHandledFrameNum() * getFrameLen();
+}
+
+void Player::lockIntervals(bool lock)
+{
+	if (lock) { vlc_mutex_lock(&intervalsMutex); }
+	else {vlc_mutex_unlock(&intervalsMutex);}
+}
+
+void Player::resetIntervals(bool empty)
+{
+	playIntervals.clear();
+	if (!empty)
+	{
+		Interval res(0, wholeDuration);
+		playIntervals[res.in] = res;
+	}
+}
+
+void Player::modifyIntervals(bool add, const Feature *f, int8_t minIntensity, int8_t maxIntensity, bool affectUnmarked)
+{
+	auto modify = add ? &FeatureList::insertInterval : &FeatureList::removeInterval;
+	
+	const std::vector<Interval> &featureIntervals = f->getIntervals();
+	for (const Interval &interval: featureIntervals)
+	{
+		if (interval.intensity >= minIntensity && interval.intensity <= maxIntensity)
+		{
+			modify(playIntervals, interval);
+		}
+	}
+	if (affectUnmarked)
+	{
+		mtime_t prevOut = 0; 
+		for (const Interval &interval: featureIntervals)
+		{
+			msg_Dbg(obj, "%s %li - %li", add ? "add" : "remove", prevOut, interval.in);
+			modify(playIntervals, Interval(prevOut, interval.in));
+			prevOut = interval.out;
+		}
+		msg_Dbg(obj, "%s %li - %li", add ? "add" : "remove", prevOut, wholeDuration);
+		modify(playIntervals, Interval(prevOut, wholeDuration));
+	}
+}
+
+mtime_t Player::recalcLength()
+{
+	length = 0;
+	for (auto &p: playIntervals)
+	{
+		length += p.second.length();
+	}
+	msg_Dbg(obj, "~~~~Player Intervals: %li", playIntervals.size());
+	for (auto p: playIntervals)
+	{
+		msg_Dbg(obj, "~~~~interval: %li - %li", p.second.in, p.second.out);
+	}
+	
+	return length;
+}
+
+void Player::updateCurrentInterval()
+{
+	if (savedTime)
+	{
+		auto closestIt = playIntervals.lower_bound(savedTime);
+		if (closestIt == playIntervals.end()) 
+		{
+			closestIt = playIntervals.begin(); 
+		}
+		else if (closestIt != playIntervals.begin())
+		{
+			closestIt--; //select prev interval, if it contains our timestamp
+			if (closestIt->second.out <= savedTime)
+			{
+				closestIt++;
+			}
+		}
+		curInterval = closestIt;
+	}
+	else { curInterval = playIntervals.begin(); }
 }
 
 int Player::framesInPlayInterval() const

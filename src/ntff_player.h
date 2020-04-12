@@ -36,6 +36,11 @@ public:
 	void hideDialog();
 	mtime_t getGlobalTime() const;
 	mtime_t getLength() const { return length; }
+	void lockIntervals(bool lock);
+	void resetIntervals(bool empty);
+	void modifyIntervals(bool add, const Feature *f, int8_t minIntensity, int8_t maxIntensity, bool affectUnmarked);
+	mtime_t recalcLength();
+	void updateCurrentInterval();
 private:
 	demux_t *obj;
 	FeatureList *featureList;
@@ -45,6 +50,7 @@ private:
 	std::map<mtime_t, Interval> playIntervals;
 	std::map<mtime_t, Interval>::iterator curInterval;
 	mtime_t length;
+	mtime_t wholeDuration;
 	mtime_t savedTime;
 	bool intervalsSelected;
 	Dialog *dialog;
