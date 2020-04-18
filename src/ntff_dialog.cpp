@@ -167,11 +167,14 @@ public:
 	UserAction(extension_dialog_t *dialog, Action selected, int row, int column = -1):
 		Combobox(dialog, "", std::vector<std::string>(), row, column)
 	{
-		std::vector<std::string> values;
 		values.push_back("add");
 		values.push_back("remove");
 		fillValues(values);
 		setText(values[selected]);
+	}
+	void setAction(Action action)
+	{
+		updateText(values[action]);
 	}
 	Action getAction() const { return (Action)getSelectedId(); }
 	static Action fromStr(const std::string &action)
@@ -179,45 +182,48 @@ public:
 		if (action == "add") { return Add; }
 		return Remove;
 	}
+	static std::string toStr(Action action)
+	{
+		if (action == Add) { return "add"; }
+		return "remove";
+	}
+private:
+	std::vector<std::string> values;
 };
 
 class FeatureWidget: public ComplexWidget
 {
 public:
 	enum {Less, More, LessOrEq, MoreOrEq};
-	FeatureWidget(extension_dialog_t *dialog, const Feature *feature, int row)
+	FeatureWidget(extension_dialog_t *dialog, Feature *feature, int row): feature(feature)
 	{
 		addWidget(new Label(dialog, "then", row));
 		
-		action = new UserAction(dialog, UserAction::fromStr(feature->getAction()), row);
+		action = new UserAction(dialog, UserAction::Add, row);
 		addWidget(action);
 		
 		addWidget(new Label(dialog, "intervals where", row));
 		
 		name = new Label(dialog, feature->getName(), row);
 		addWidget(name);
-		updateNameColor();
 		
-		std::vector<std::string> eqStr;
 		eqStr.push_back("<");
 		eqStr.push_back(">");
 		eqStr.push_back("≤");
 		eqStr.push_back("≥");
-		std::string eq = (std::find(eqStr.begin(), eqStr.end(), feature->getEq()) != eqStr.end()) ? 
-			feature->getEq() : eqStr[0];
 		
-		equality = new Combobox(dialog, eq, eqStr, row);
+		equality = new Combobox(dialog, "", eqStr, row);
 		addWidget(equality);
 		
-		value = new Combobox(dialog, std::to_string(feature->getRecIntensity()), 
-			feature->getIntervalsIntensity(), row);
+		value = new Combobox(dialog, "", feature->getIntervalsIntensity(), row);
 		addWidget(value);
 		
 		unmarked = new Checkbox(dialog, "", false, row);
 		addWidget(unmarked);
 		unmarkedLabel = new Label(dialog, "or not set", row);
 		addWidget(unmarkedLabel);
-		updateUnmarkedColor();
+		
+		restore();
 	}
 	
 	void getSelectedIntensity(int8_t &min, int8_t &max)
@@ -250,13 +256,32 @@ public:
 	int getRow() const { return name->getRow(); }
 	bool addCmd() const { return action->getAction() == UserAction::Add; }
 	bool affectUnmarked() const { return unmarked->isChecked(); }
+	void save() const
+	{
+		feature->setRecommended(atoi(value->getText()), 
+			UserAction::toStr(action->getAction()), 
+			equality->getText());
+	}
+	void restore()
+	{
+		value->updateText(std::to_string(feature->getRecIntensity()));
+		std::string eq = (std::find(eqStr.begin(), eqStr.end(), feature->getEq()) != eqStr.end()) ? 
+			feature->getEq() : eqStr[0];
+		equality->updateText(eq);
+		action->setAction(UserAction::fromStr(feature->getAction()));
+		updateNameColor();
+		updateUnmarkedColor();
+	}
+	Feature *getFeature() const { return feature; }
 private:
+	Feature *feature;
 	Label *name;
 	UserAction *action;
 	Combobox *equality;
 	Combobox *value;
 	Checkbox *unmarked;
 	Label *unmarkedLabel;
+	std::vector<std::string> eqStr;
 	
 	void updateNameColor()
 	{
@@ -282,15 +307,19 @@ static int DialogCallback(vlc_object_t *, char const *, vlc_value_t, vlc_value_t
 	}
 	else if (command->event == EXTENSION_EVENT_CLOSE)
 	{
-		dialog->close();
+		dialog->hide();
 	}
 	
     return VLC_SUCCESS;
 }
 
+static void TimerCallback(void *ptr)
+{
+	((Dialog *)ptr)->applyUserSelection();
+}
 
-Dialog::Dialog(Player *player, FeatureList *featureList) : 
-	player(player), featureList(featureList), shown(false), init(true)
+Dialog::Dialog(Player *player, const FeatureList *featureList) : 
+	player(player), shown(false)
 {
 	name = "Ntff Settings";
 	dialog = new extension_dialog_t();
@@ -313,7 +342,7 @@ Dialog::Dialog(Player *player, FeatureList *featureList) :
 	for (Feature *feature: *featureList)
 	{
 		FeatureWidget *fwidget = new FeatureWidget(dialog, feature, row);
-		features[fwidget] = feature;
+		featureWidgets.push_back(fwidget);
 		appendWidgets(fwidget);
 		row++;
 		
@@ -340,56 +369,55 @@ Dialog::Dialog(Player *player, FeatureList *featureList) :
 	
 	var_Create(player->getVlcObj(), "dialog-event", VLC_VAR_ADDRESS);
 	var_AddCallback(player->getVlcObj(), "dialog-event", DialogCallback, this);
+	timerOk = vlc_timer_create(&updateLengthTimer, TimerCallback, this) == VLC_SUCCESS;
+	if (!timerOk) { msg_Warn(player->getVlcObj(), "Unable to create dialog timer"); }
+}
+
+Dialog::~Dialog()
+{
+	var_DelCallback(player->getVlcObj(), "dialog-event", DialogCallback, this);
+	dialog->b_kill = true;
+	vlc_ext_dialog_update(player->getVlcObj(), dialog);
+	if (timerOk) { vlc_timer_destroy(updateLengthTimer); }
 }
 
 void Dialog::buttonPressed(extension_widget_t *widgetPtr)
 {
-	if (widgetPtr == ok->getPtr()) //confirm
+	if (widgetPtr == ok->getPtr())
 	{
-		updatedFeatures();
-		done();
+		if (timerOk) { vlc_timer_schedule(updateLengthTimer, false, 0, 0); }
+		for (FeatureWidget *widget: featureWidgets)	{ widget->save(); }
 	}
-	else if (widgetPtr == cancel->getPtr()) //cancel
+	else if (widgetPtr == cancel->getPtr())
 	{
-		done();
+		if (timerOk) { vlc_timer_schedule(updateLengthTimer, false, 0, 0); }
+		for (FeatureWidget *widget: featureWidgets)	{ widget->restore(); }
 	}
+	player->setIntervalsSelected();
 }
 
 void Dialog::show()
 {
 	dialog->b_hide = false;
-	vlc_ext_dialog_update(player->getVlcObj(), dialog);
+	applyUserSelection(true);
 	shown = true;
 	
-	auto timerCallback = [](void *ptr)
-	{
-		((Dialog *)ptr)->updateLength();
-	};
-
-	timerOk = vlc_timer_create(&updateLengthTimer, timerCallback, this) == VLC_SUCCESS;
 	if (timerOk) { vlc_timer_schedule(updateLengthTimer, false, CLOCK_FREQ/4, CLOCK_FREQ/4); }
-	else { msg_Warn(player->getVlcObj(), "Unable to create dialog timer"); }
 }
 
-void Dialog::close() 
+void Dialog::hide() //need to hide from other thread than DialogCallback
 {
 	if (shown == true)
 	{
 		shown = false;
 		dialog->b_hide = true;
-		vlc_ext_dialog_update(player->getVlcObj(), dialog); //need to hide from other thread than DialogCallback
+		vlc_ext_dialog_update(player->getVlcObj(), dialog);
 	}
 }
 
 void Dialog::appendWidgets(ComplexWidget *src) 
 {
 	widgets.insert(widgets.end(), src->getWidgets().begin(), src->getWidgets().end());
-}
-
-void Dialog::done()
-{
-	if (timerOk) { vlc_timer_destroy(updateLengthTimer); }
-	player->setIntervalsSelected();
 }
 
 std::string Dialog::formatTime(mtime_t time) const //copied from StreamTime::formatTime
@@ -416,26 +444,23 @@ int Dialog::getMaxColumn() const
 bool Dialog::updatedFeatures()
 {
 	bool updated = false;
-	for (auto p: features)
+	for (FeatureWidget *widget: featureWidgets)
 	{
-		FeatureWidget *widget = p.first;
 		if (widget->update()) { updated = true; }
 	}
 	return updated;
 }
 
-void Dialog::updateLength()
+void Dialog::applyUserSelection(bool force)
 {
-	bool beginWithChanged = beginAction->changed();
-	if (updatedFeatures() || beginWithChanged || init)
+	bool beginChanged = beginAction->changed();
+	if (updatedFeatures() || beginChanged || force)
 	{
-		init = false;
 		player->lockIntervals(true);
 		player->resetIntervals(beginAction->getAction() == UserAction::Remove);
 		std::map<int, FeatureWidget *> orderedFeatures;
-		for (auto p: features)
+		for (FeatureWidget *widget: featureWidgets)
 		{
-			FeatureWidget *widget = p.first;
 			orderedFeatures[widget->getRow()] = widget;
 		}
 		
@@ -444,7 +469,7 @@ void Dialog::updateLength()
 			FeatureWidget *widget = p.second;
 			int8_t min, max;
 			widget->getSelectedIntensity(min, max);
-			player->modifyIntervals(widget->addCmd(), features[widget], min, max, widget->affectUnmarked());
+			player->modifyIntervals(widget->addCmd(), widget->getFeature(), min, max, widget->affectUnmarked());
 		}
 		
 		mtime_t length = player->recalcLength();

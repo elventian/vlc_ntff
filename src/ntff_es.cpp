@@ -122,14 +122,12 @@ int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 	
 	if (isVideo(streamId))
 	{
-		bool dup = framesQueue.count(frameInInterval) > 0;
 		addFrame(frameInInterval);
 		std::string frames;
 		for (auto it = framesQueue.begin(); it != framesQueue.end(); it++)
 		{
 			frames += std::to_string(*it) + " ";
 		}
-		msg_Dbg(player->getVlcObj(), "sendBlock %s cur = %li frames: %s", dup? "DUPLICATE": "", block->i_pts, frames.c_str());
 		
 		block->i_dts = getTime();
 		if (block->i_pts != 0)
@@ -149,7 +147,7 @@ int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 			mtime_t time = updateTime();
 			es_out_Control(out, ES_OUT_SET_PCR, time);
 			
-			//msg_Dbg(player->getVlcObj(), "sendBlock blockTime = %li, frameInInterval = %i", blockTime, frameInInterval);
+			msg_Dbg(player->getVlcObj(), "sendBlock blockTime = %li, curFrameId = %i", blockTime, curFrameId);
 		}
 	}
 	else

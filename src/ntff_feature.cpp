@@ -74,8 +74,9 @@ void FeatureList::insertInterval(std::map<mtime_t, Interval> &container, const I
 void FeatureList::removeInterval(std::map<mtime_t, Interval> &container, const Interval &interval)
 {
 	if (container.empty()) { return; }
-		
+	
 	auto faffected = container.upper_bound(interval.in);  //maybe need change .out of prev
+	if (faffected == container.begin()) { return; }
 	faffected--;
 	Interval &fint = faffected->second;
 	bool done = false;

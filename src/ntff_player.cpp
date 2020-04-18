@@ -25,11 +25,11 @@ Player::Player(demux_t *obj, FeatureList *featureList) : obj(obj), featureList(f
 {
 	demux_t *demuxer = (demux_t *)obj;
 	out = new OutStream(demuxer->out, this);
-	dialog = new Dialog(this, featureList);
 	intervalsSelected = false;
 	length = 0;
 	curInterval = playIntervals.begin();
 	vlc_mutex_init(&intervalsMutex);
+	dialog = new Dialog(this, featureList);
 	var_AddCallback( obj->obj.libvlc, "key-action", ActionEvent, this);
 }
 
@@ -111,7 +111,7 @@ void Player::showDialog()
 
 void Player::hideDialog()
 {
-	dialog->close();
+	dialog->hide();
 }
 
 mtime_t Player::getGlobalTime() const

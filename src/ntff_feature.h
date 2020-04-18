@@ -36,6 +36,12 @@ public:
 	const std::string &getEq() const { return recEq; }
 	int8_t getRecIntensity() const { return recIntensity; }
 	std::vector<std::string> getIntervalsIntensity() const;
+	void setRecommended(int8_t intensity, const std::string &action, const std::string &eq)
+	{
+		recIntensity = intensity;
+		recAction = action;
+		recEq = eq;
+	}
 private:
 	std::string name;
 	std::string description;

@@ -13,7 +13,6 @@ struct vlc_object_t;
 namespace Ntff {
 
 class Player;
-class Feature;
 class FeatureList;
 class FeatureWidget;
 class Widget;
@@ -25,19 +24,19 @@ class UserAction;
 class Dialog
 {
 public:
-	Dialog(Player *player, FeatureList *featureList);
+	Dialog(Player *player, const FeatureList *featureList);
+	~Dialog();
 	void buttonPressed(extension_widget_t *widgetPtr);
 	void show();
-	void close();
+	void hide();
 	bool isShown() const { return shown; }
-	void updateLength();
+	void applyUserSelection(bool force = false);
 private:
 	Player *player;
 	extension_dialog_t *dialog;
-	FeatureList *featureList;
 	std::string name;
 	std::list<Widget *> widgets;
-	std::map<FeatureWidget *, Feature*> features;
+	std::list<FeatureWidget *> featureWidgets;
 	Button *ok;
 	Button *cancel;
 	Label *playLength;
@@ -45,12 +44,10 @@ private:
 	vlc_timer_t updateLengthTimer;
 	bool timerOk;
 	UserAction *beginAction;
-	bool init;
 	
 	int getMaxColumn() const;
 	bool updatedFeatures();
 	void appendWidgets(ComplexWidget *src);
-	void done();
 	std::string formatTime(mtime_t time) const;
 };
 
