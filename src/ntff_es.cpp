@@ -10,9 +10,11 @@ namespace Ntff
 {
 
 OutStream::OutStream(es_out_t *out, Player *player) : 
-	curTime(0),
 	out(out), player(player)
 {
+	curTime = 0;
+	outputEnabled = false;
+	lastBlockTime = 0;
 	wrapper.p_sys = (es_out_sys_t *)this;
 	
 	wrapper.pf_add = [] (es_out_t *out, const es_format_t *format)
@@ -122,18 +124,13 @@ int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 	
 	if (isVideo(streamId))
 	{
-		addFrame(frameInInterval);
-		std::string frames;
-		for (auto it = framesQueue.begin(); it != framesQueue.end(); it++)
-		{
-			frames += std::to_string(*it) + " ";
-		}
-		
+		if (outputEnabled) { addFrame(frameInInterval); }		
 		block->i_dts = getTime();
 		if (block->i_pts != 0)
 		{
 			block->i_pts = 0;
 		}
+		lastBlockTime = blockTime;
 	}
 	else if (isAudio(streamId))
 	{
@@ -147,7 +144,7 @@ int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 			mtime_t time = updateTime();
 			es_out_Control(out, ES_OUT_SET_PCR, time);
 			
-			msg_Dbg(player->getVlcObj(), "sendBlock blockTime = %li, curFrameId = %i", blockTime, curFrameId);
+			//msg_Dbg(player->getVlcObj(), "sendBlock blockTime = %li, curFrameId = %i", blockTime, curFrameId);
 		}
 	}
 	else
@@ -164,7 +161,11 @@ int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 		}
 	}
 	
-	return out->pf_send(out, streamId, block);
+	if (outputEnabled)
+	{
+		return out->pf_send(out, streamId, block);
+	}
+	else { return VLC_SUCCESS; }
 }
 
 void EStreamCollection::reuse()

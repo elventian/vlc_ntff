@@ -43,6 +43,7 @@ public:
 	void resetFramesNum() { framesQueue.clear(); }
 	void setTime(mtime_t time);
 	mtime_t getTime() const { return curTime; }
+	mtime_t getLastBlockTime() const { return lastBlockTime; }
 	int getHandledFrameNum() const;
 	es_out_t *getWrapperStream() { return &wrapper; }
 	void reuseStreams() { streams.reuse(); }
@@ -52,10 +53,13 @@ public:
 	int sendBlock(es_out_id_t *streamId, block_t *block);
 	int control(int i_query, va_list va);
 	void destroyOutStream();
+	void enableOutput() { outputEnabled = true; }
 private:
 	EStreamCollection streams;
 	mtime_t curTime;
+	mtime_t lastBlockTime;
 	std::set<int> framesQueue;
+	bool outputEnabled;
 	
 	es_out_t *out;
 	es_out_t wrapper;

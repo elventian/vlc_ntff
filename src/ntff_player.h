@@ -52,6 +52,7 @@ private:
 	mtime_t savedTime;
 	bool intervalsSelected;
 	Dialog *dialog;
+	bool needInitItems;
 	
 	void skipToCurInterval();
 	const Item *getCurItem() const;
@@ -62,6 +63,7 @@ private:
 	mtime_t globalToLocalTime(mtime_t global) const; //convert global project time to local file time
 	void seek(mtime_t globalTime, mtime_t streamTime);
 	mtime_t getStreamTimeByGlobal(mtime_t global) const;
+	mtime_t getCurOffset() const;
 };
 
 class Player::Item
@@ -76,6 +78,8 @@ public:
 	int play() const;
 	const Interval &getInterval() const { return interval; }
 	mtime_t globalToLocalTime(mtime_t global) const { return global - interval.in;}
+	void setFirstFrameOffset(mtime_t offset) { firstFrameOffset = offset; }
+	mtime_t getFirstFrameOffset() const { return firstFrameOffset; }
 private:
 	Interval interval;
 	double frameLen;
@@ -83,6 +87,7 @@ private:
 	demux_t *demux;
 	bool valid;
 	std::string name;
+	mtime_t firstFrameOffset; //if videofile has B-frames, first frame will have pts != 0
 };
 
 }

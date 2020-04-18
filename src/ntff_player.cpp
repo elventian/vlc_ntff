@@ -46,9 +46,9 @@ bool Player::isValid() const
 {
 	if (items.empty()) return false;
 	
-	for (auto it: items)
+	for (auto it = items.begin(); it != items.end(); it++)
 	{
-		if (!it.second.isValid()) return false;
+		if (!(*it).second.isValid()) return false;
 	}
 	
 	return true;
@@ -61,11 +61,12 @@ void Player::addFile(const Interval &interval, const std::string &filename)
 	length = wholeDuration = interval.out;
 	playIntervals[0] = Interval(0, wholeDuration);
 	curInterval = playIntervals.begin();
+	needInitItems = true;
 }
 
 bool Player::timeIsInPlayInterval(mtime_t time) const
 {
-	return getCurInterval().contains(getCurItem()->getInterval().in + time);
+	return getCurInterval().contains(getCurItem()->getInterval().in + time - getCurOffset());
 }
 
 mtime_t Player::getFrameLen() const
@@ -78,9 +79,19 @@ mtime_t Player::getFrameLen() const
 	}
 }
 
+mtime_t Player::getCurOffset() const
+{
+	const Item *item = getCurItem();
+	if (!item) return 0;
+	else
+	{
+		return item->getFirstFrameOffset();
+	}
+}
+
 int Player::getFrameId(mtime_t timeInItem) const
 {
-	return round((double)timeInItem / getFrameLen());
+	return round((double)(timeInItem - getCurOffset()) / getFrameLen());
 }
 
 int Player::getCurIntervalFirstFrame() const
@@ -287,8 +298,20 @@ int Player::Item::play() const
 
 int Player::play()
 {
+	if (needInitItems)
+	{
+		needInitItems = false;
+		for (auto it = items.begin(); it != items.end(); it++)
+		{
+			Item &item = (*it).second;
+			item.play();
+			item.setFirstFrameOffset(out->getLastBlockTime());
+			item.skip(0);
+		}
+		out->enableOutput();
+	}
 	int res = VLC_DEMUXER_SUCCESS;
-	//msg_Dbg(obj, "Player");
+
 	if (!intervalsSelected && !dialog->isShown()) { showDialog(); }
 	else if (intervalsSelected && dialog->isShown()) { hideDialog(); }
 	else
