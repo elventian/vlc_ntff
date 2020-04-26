@@ -21,7 +21,8 @@ static int ActionEvent( vlc_object_t *, char const *, vlc_value_t, vlc_value_t n
 	return VLC_SUCCESS;
 }
 
-Player::Player(demux_t *obj, FeatureList *featureList) : obj(obj), featureList(featureList)
+Player::Player(demux_t *obj, FeatureList *featureList, double fps) : 
+	obj(obj), featureList(featureList), fps(fps)
 {
 	demux_t *demuxer = (demux_t *)obj;
 	out = new OutStream(demuxer->out, this);
@@ -64,19 +65,9 @@ void Player::addFile(const Interval &interval, const std::string &filename)
 	needInitItems = true;
 }
 
-bool Player::timeIsInPlayInterval(mtime_t time) const
+bool Player::frameIsInPlayInterval(frame_id frame) const
 {
-	return getCurInterval().contains(getCurItem()->getInterval().in + time - getCurOffset());
-}
-
-mtime_t Player::getFrameLen() const
-{
-	const Item *item = getCurItem();
-	if (!item) return 0;
-	else
-	{
-		return item->getFrameLen();
-	}
+	return getCurInterval().contains(frame);
 }
 
 mtime_t Player::getCurOffset() const
@@ -94,19 +85,18 @@ int Player::getFrameId(mtime_t timeInItem) const
 	return round((double)(timeInItem - getCurOffset()) / getFrameLen());
 }
 
-int Player::getCurIntervalFirstFrame() const
+frame_id Player::getCurIntervalFirstFrame() const
 {
-	mtime_t timeInItem = getCurInterval().in - getCurItem()->getInterval().in;
-	return getFrameId(timeInItem);
+	return getCurInterval().in - getCurItem()->getInterval().in;
 }
 
 void Player::setIntervalsSelected()
 {
 	Interval &newInterval = curInterval->second;
-	mtime_t newTime = newInterval.contains(savedTime) ? savedTime : newInterval.in;
+	frame_id targetFrame = newInterval.contains(savedFrameId) ? savedFrameId : newInterval.in;
 	
-	msg_Dbg(obj, "Seek to %li", newTime);
-	seek(newTime, getStreamTimeByGlobal(newTime));
+	msg_Dbg(obj, "Seek to %li", targetFrame);
+	seek(targetFrame, getStreamFrameByGlobal(targetFrame));
 
 	intervalsSelected = true;
 	setPause(false);
@@ -116,7 +106,7 @@ void Player::showDialog()
 {
 	setPause(true);
 	intervalsSelected = false; 
-	savedTime = getGlobalTime();
+	savedFrameId = getGlobalFrame();
 	dialog->show();
 }
 
@@ -125,9 +115,9 @@ void Player::hideDialog()
 	dialog->hide();
 }
 
-mtime_t Player::getGlobalTime() const
+frame_id Player::getGlobalFrame() const
 {
-	return getCurInterval().in + out->getHandledFrameNum() * getFrameLen();
+	return getCurInterval().in + out->getHandledFrameNum();
 }
 
 void Player::lockIntervals(bool lock)
@@ -146,7 +136,8 @@ void Player::resetIntervals(bool empty)
 	}
 }
 
-void Player::modifyIntervals(bool add, const Feature *f, int8_t minIntensity, int8_t maxIntensity, bool affectUnmarked)
+void Player::modifyIntervals(bool add, const Feature *f, 
+	int8_t minIntensity, int8_t maxIntensity, bool affectUnmarked)
 {
 	auto modify = add ? &FeatureList::insertInterval : &FeatureList::removeInterval;
 	
@@ -160,7 +151,7 @@ void Player::modifyIntervals(bool add, const Feature *f, int8_t minIntensity, in
 	}
 	if (affectUnmarked)
 	{
-		mtime_t prevOut = 0; 
+		frame_id prevOut = 0; 
 		for (const Interval &interval: featureIntervals)
 		{
 			msg_Dbg(obj, "%s %li - %li", add ? "add" : "remove", prevOut, interval.in);
@@ -172,27 +163,25 @@ void Player::modifyIntervals(bool add, const Feature *f, int8_t minIntensity, in
 	}
 }
 
-mtime_t Player::recalcLength()
+void Player::recalcLength()
 {
 	length = 0;
 	for (auto &p: playIntervals)
 	{
 		length += p.second.length();
 	}
-	msg_Dbg(obj, "~~~~Player Intervals: %li", playIntervals.size());
+	msg_Dbg(obj, "Player Intervals (%li)", playIntervals.size());
 	for (auto p: playIntervals)
 	{
 		msg_Dbg(obj, "~~~~interval: %li - %li", p.second.in, p.second.out);
 	}
-	
-	return length;
 }
 
 void Player::updateCurrentInterval()
 {
-	if (savedTime)
+	if (savedFrameId)
 	{
-		auto closestIt = playIntervals.lower_bound(savedTime);
+		auto closestIt = playIntervals.lower_bound(savedFrameId);
 		if (closestIt == playIntervals.end()) 
 		{
 			closestIt = playIntervals.begin(); 
@@ -200,7 +189,7 @@ void Player::updateCurrentInterval()
 		else if (closestIt != playIntervals.begin())
 		{
 			closestIt--; //select prev interval, if it contains our timestamp
-			if (closestIt->second.out <= savedTime)
+			if (closestIt->second.out <= savedFrameId)
 			{
 				closestIt++;
 			}
@@ -210,36 +199,21 @@ void Player::updateCurrentInterval()
 	else { curInterval = playIntervals.begin(); }
 }
 
-int Player::framesInPlayInterval() const
+Player::Item *Player::getItemAt(frame_id frame)
 {
-	Interval interval = getCurInterval();
-	const Player::Item *item = getItemAt(interval.in);
-	return (interval.out - interval.in) / item->getFrameLen();
+	return const_cast<Item *>(static_cast<const Player&>(*this).getItemAt(frame));
 }
 
-mtime_t Player::globalToLocalTime(mtime_t global) const 
+const Player::Item *Player::getItemAt(frame_id frame) const
 {
-	const Item *item = getItemAt(global);
-	if (!item) return 0;
-	
-	return item->globalToLocalTime(global);
-}
-
-Player::Item *Player::getItemAt(mtime_t time)
-{
-	return const_cast<Item *>(static_cast<const Player&>(*this).getItemAt(time));
-}
-
-const Player::Item *Player::getItemAt(mtime_t time) const
-{
-	auto it = items.lower_bound(time);
+	auto it = items.lower_bound(frame);
 	if (it == items.end())
 	{
 		it--;
-		if (it->second.getInterval().out > time) { return &it->second;}
+		if (it->second.getInterval().out > frame) { return &it->second;}
 		else return nullptr;
 	}
-	else if (it->first == time) { return &it->second; }
+	else if (it->first == frame) { return &it->second; }
 	else
 	{
 		it--;
@@ -259,7 +233,7 @@ void Player::skipToCurInterval()
 	Item *item = getItemAt(interval.in);
 	if (!item) return;
 	
-	item->skip(item->globalToLocalTime(interval.in));
+	item->skip(item->globalToLocalFrame(interval.in) * getFrameLen());
 }
 
 const Player::Item *Player::getCurItem() const
@@ -277,12 +251,7 @@ Player::Item::Item(vlc_object_t *obj, const Interval &interval,
 	demux = demux_New(obj, "any", filename.c_str(), stream, outStream);
 	if (!demux) { return; }
 	
-	double fps;
-	demux_Control(demux, DEMUX_GET_FPS, &fps);
-	frameLen = 1000000 / fps;
 	name = filename;
-	
-	//msg_Dbg(obj, "~~~~Player::Item: frameLen = %f", frameLen);	
 	valid = true;
 }
 
@@ -318,7 +287,7 @@ int Player::play()
 	{
 		vlc_mutex_lock(&intervalsMutex);
 	
-		if (framesInPlayInterval() <= out->getHandledFrameNum()) //interval handled, seek to next
+		if (getCurInterval().length() <= out->getHandledFrameNum()) //interval handled, seek to next
 		{
 			curInterval++;
 			if (curInterval == playIntervals.end()) { res = VLC_DEMUXER_EOF; }
@@ -326,7 +295,7 @@ int Player::play()
 			{
 				out->resetFramesNum();
 				skipToCurInterval();
-				msg_Dbg(obj, "~~~~Player next interval: %li", (*curInterval).first);
+				msg_Dbg(obj, "Player next interval: %li", (*curInterval).first);
 			}
 		}
 		
@@ -378,7 +347,7 @@ int Player::control(int query, va_list args)
 
         case DEMUX_GET_POSITION:
             pf = va_arg( args, double *);
-            *pf = (double)out->getTime() / length;
+            *pf = (double)out->getTime() / getLength();
             return VLC_SUCCESS;
 
         case DEMUX_SET_POSITION:
@@ -387,7 +356,7 @@ int Player::control(int query, va_list args)
 
         case DEMUX_GET_LENGTH:
             ptime = va_arg( args, mtime_t *);
-            *ptime = length;
+            *ptime = getLength();
             return VLC_SUCCESS;
 
         case DEMUX_GET_TITLE_INFO:
@@ -405,45 +374,45 @@ int Player::control(int query, va_list args)
 
 void Player::seek(double pos)
 {
-	const mtime_t streamTime = length * pos;
-	mtime_t skippedTime = 0;
+	const frame_id targetFrame = round(length * pos);
+	frame_id skippedFrames = 0;
 	
 	for (auto it = playIntervals.begin(); it != playIntervals.end(); it++)
 	{
 		Interval &interval = (*it).second;
-		if (skippedTime + interval.length() < streamTime) //found target interval
+		if (skippedFrames + interval.length() < targetFrame) //found target interval
 		{
-			skippedTime += interval.length();
+			skippedFrames += interval.length();
 		}
 		else 
 		{
 			curInterval = it;
-			mtime_t globalTime = streamTime - skippedTime + interval.in;
-			seek(globalTime, streamTime);
+			frame_id globalFrame = (targetFrame - skippedFrames) + interval.in;
+			seek(globalFrame, targetFrame);
 			return;
 		}
 	}
 }
 
-void Player::seek(mtime_t globalTime, mtime_t streamTime)
+void Player::seek(frame_id globalFrame, frame_id streamFrame)
 {
-	Item *item = getItemAt(globalTime);
+	Item *item = getItemAt(globalFrame);
 	if (!item) return;
 	
-	item->skip(item->globalToLocalTime(globalTime));
-	out->setTime(streamTime);
+	item->skip(item->globalToLocalFrame(globalFrame) * getFrameLen());
+	out->setTime(streamFrame * getFrameLen());
 }
 
-mtime_t Player::getStreamTimeByGlobal(mtime_t global) const
+frame_id Player::getStreamFrameByGlobal(frame_id frame) const
 {
-	mtime_t streamTime = 0;
+	frame_id streamFrames = 0;
 	for (auto it = playIntervals.begin(); it != playIntervals.end(); it++)
 	{
 		const Interval &interval = (*it).second;
-		if (interval.in > global) { return streamTime; }
-		if (interval.out <= global) { streamTime += interval.length(); }
+		if (interval.in > frame) { break; }
+		if (interval.out <= frame) { streamFrames += interval.length(); }
 	}
-	return streamTime;
+	return streamFrames;
 }
 
 void Player::setPause(bool pause) const

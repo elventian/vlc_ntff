@@ -39,7 +39,7 @@ FeatureList::~FeatureList()
 	}
 }
 
-void FeatureList::insertInterval(std::map<mtime_t, Interval> &container, const Interval &interval)
+void FeatureList::insertInterval(std::map<frame_id, Interval> &container, const Interval &interval)
 {
 	if (container.empty()) { container[interval.in] = interval; return; }
 	
@@ -71,7 +71,7 @@ void FeatureList::insertInterval(std::map<mtime_t, Interval> &container, const I
 	container[res.in] = res;
 }
 
-void FeatureList::removeInterval(std::map<mtime_t, Interval> &container, const Interval &interval)
+void FeatureList::removeInterval(std::map<frame_id, Interval> &container, const Interval &interval)
 {
 	if (container.empty()) { return; }
 	

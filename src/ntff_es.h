@@ -44,7 +44,7 @@ public:
 	void setTime(mtime_t time);
 	mtime_t getTime() const { return curTime; }
 	mtime_t getLastBlockTime() const { return lastBlockTime; }
-	int getHandledFrameNum() const;
+	int64_t getHandledFrameNum() const;
 	es_out_t *getWrapperStream() { return &wrapper; }
 	void reuseStreams() { streams.reuse(); }
 	
@@ -58,14 +58,14 @@ private:
 	EStreamCollection streams;
 	mtime_t curTime;
 	mtime_t lastBlockTime;
-	std::set<int> framesQueue;
+	std::set<int64_t> framesQueue;
 	bool outputEnabled;
 	
 	es_out_t *out;
 	es_out_t wrapper;
 	Player *player;
 	
-	void addFrame(uint32_t frame);
+	void addFrame(int64_t frame);
 };
 
 }

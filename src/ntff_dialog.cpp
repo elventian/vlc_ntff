@@ -472,7 +472,8 @@ void Dialog::applyUserSelection(bool force)
 			player->modifyIntervals(widget->addCmd(), widget->getFeature(), min, max, widget->affectUnmarked());
 		}
 		
-		mtime_t length = player->recalcLength();
+		player->recalcLength();
+		mtime_t length = player->getLength();
 		playLength->updateText(formatTime(length));
 		vlc_ext_dialog_update(player->getVlcObj(), dialog);
 		player->updateCurrentInterval();

@@ -56,7 +56,7 @@ void OutStream::setTime(mtime_t time)
 	es_out_Control(out, ES_OUT_RESET_PCR);
 }
 
-int OutStream::getHandledFrameNum() const
+int64_t OutStream::getHandledFrameNum() const
 {
 	if (framesQueue.empty()) return 0;
 	else return *framesQueue.begin();
@@ -97,7 +97,7 @@ void OutStream::destroyOutStream()
 	out->pf_destroy(out);
 }
 
-void OutStream::addFrame(uint32_t frame)
+void OutStream::addFrame(int64_t frame)
 {
 	framesQueue.insert(frame);
 	if (framesQueue.size() < 2) return;
@@ -119,8 +119,8 @@ void OutStream::addFrame(uint32_t frame)
 int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 {
 	mtime_t blockTime = (block->i_pts == 0) ? block->i_dts : block->i_pts;
-	int curFrameId = player->getFrameId(blockTime);
-	int frameInInterval = curFrameId - player->getCurIntervalFirstFrame();
+	frame_id curFrameId = player->getFrameId(blockTime);
+	frame_id frameInInterval = curFrameId - player->getCurIntervalFirstFrame();
 	
 	if (isVideo(streamId))
 	{
@@ -137,14 +137,14 @@ int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 		block->i_dts = block->i_pts = getTime();
 	}
 	
-	if (player->timeIsInPlayInterval(blockTime))
+	if (player->frameIsInPlayInterval(curFrameId))
 	{
 		if (isVideo(streamId))
 		{
 			mtime_t time = updateTime();
 			es_out_Control(out, ES_OUT_SET_PCR, time);
 			
-			//msg_Dbg(player->getVlcObj(), "sendBlock blockTime = %li, curFrameId = %i", blockTime, curFrameId);
+			//msg_Dbg(player->getVlcObj(), "sendBlock blockTime = %li, curFrameId = %li", blockTime, curFrameId);
 		}
 	}
 	else
@@ -157,7 +157,7 @@ int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 		{
 			block->i_pts = getTime() + frameInInterval;
 			block->i_flags |= BLOCK_FLAG_PRIVATE_SKIP_VIDEOBLOCK;
-			//msg_Dbg(player->getVlcObj(), "sendBlock SKIP_VIDEOBLOCK");
+			//msg_Dbg(player->getVlcObj(), "sendBlock blockTime = %li, curFrameId = %li SKIP", blockTime, curFrameId);
 		}
 	}
 	

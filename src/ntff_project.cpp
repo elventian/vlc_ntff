@@ -31,7 +31,7 @@ class Entry
 {
 	friend std::ostream &operator<<(std::ostream &out, Entry const &entry);
 public:
-	Entry(mtime_t in, mtime_t out, int8_t intensity, const char *producer): 
+	Entry(frame_id in, frame_id out, int8_t intensity, const char *producer): 
 		interval(in, out, intensity), producer(producer), producerPtr(nullptr) {}
 	const std::string &getProducerName() const { return producer; }
 	void setProducer(Producer *producer) { producerPtr = producer; }
@@ -48,7 +48,7 @@ class  Playlist
 {
 	friend std::ostream &operator<<(std::ostream &out, Playlist const &playlist);
 public:
-	 Playlist(xml_reader_t *reader, float frameLen);
+	 Playlist(xml_reader_t *reader, double fps);
 	 bool isEmpty() { return entries.empty(); }
 	 bool isFeature() const { return feature; }
 	 void bindProducers(const std::list<Producer *>&producers);
@@ -60,7 +60,7 @@ private:
 	 std::list<Entry> entries;
 	 bool feature;
 	 void skipToEnd(xml_reader_t *reader) const;
-	 mtime_t parseTime(const char *time) const;
+	 frame_id parseTime(const char *time, double fps) const; // parse frame id from HH:MM:SS.MS format
 };
 
 class FeatureTrack
@@ -108,7 +108,7 @@ std::ostream &operator<<(std::ostream &out, Producer const &producer)
 	return out;
 }
 
-Playlist::Playlist(xml_reader_t *reader, float frameLen)
+Playlist::Playlist(xml_reader_t *reader, double fps)
 {
 	if (xml_ReaderIsEmptyElement(reader)) { return; }
 	
@@ -132,14 +132,14 @@ Playlist::Playlist(xml_reader_t *reader, float frameLen)
 		return;
 	}
 	
-	mtime_t prevEndTime = 0;
+	frame_id prevEndFrame = 0;
 	do
 	{
 		if (node == "blank")
 		{
 			const char *length;
 			xml_ReaderNextAttr(reader, &length);
-			prevEndTime += parseTime(length);
+			prevEndFrame += parseTime(length, fps);
 		}
 		else if (node == "entry")
 		{
@@ -150,9 +150,9 @@ Playlist::Playlist(xml_reader_t *reader, float frameLen)
 			xml_ReaderNextAttr(reader, &in);
 			xml_ReaderNextAttr(reader, &out);
 			
-			mtime_t beginTime = prevEndTime;
-			mtime_t endTime = prevEndTime + parseTime(out) + frameLen;
-			prevEndTime = endTime;
+			frame_id beginFrame = prevEndFrame;
+			frame_id endFrame = prevEndFrame + parseTime(out, fps) + 1;
+			prevEndFrame = endFrame;
 			int8_t intensity = 0;
 			
 			if (!empty)
@@ -185,7 +185,7 @@ Playlist::Playlist(xml_reader_t *reader, float frameLen)
 				empty = true;
 			}
 			
-			entries.push_back(Entry(beginTime, endTime, intensity, producer));
+			entries.push_back(Entry(beginFrame, endFrame, intensity, producer));
 		}
 		
 		type = Project::nextSibling(reader, node, empty, node);
@@ -240,12 +240,16 @@ void Playlist::skipToEnd(xml_reader_t *reader) const
 	}
 }
 
-mtime_t Playlist::parseTime(const char *time) const
+frame_id Playlist::parseTime(const char *time, double fps) const
 {
 	unsigned hours, min, sec, msec;
 	int num = sscanf(time, "%d:%d:%d.%d", &hours, &min, &sec, &msec);
 	if (num != 4) return 0;
-	return ((hours * 60 * 60 + min * 60 + sec) * 1000 + msec) * 1000;
+
+	//copied from mlt_property.c, function time_clock_to_frames
+	frame_id frame = floor( fps * hours * 3600 ) + floor( fps * min * 60 ) + lrint( fps * (sec + msec/1000.));
+
+	return frame;
 }
 
 FeatureTrack::FeatureTrack(xml_reader_t *reader): feature(nullptr), playlist(nullptr)
@@ -452,7 +456,7 @@ Project::Project(vlc_object_t *nobj, const char *file, stream_t *stream)
 		
 		if (node == "playlist")
 		{
-			Playlist *p = new Playlist(reader, getFrameLen());
+			Playlist *p = new Playlist(reader, fps);
 			if (!p->isEmpty())
 			{
 				playlists.push_back(p);
@@ -484,7 +488,7 @@ Project::Project(vlc_object_t *nobj, const char *file, stream_t *stream)
 	
 	std::stringstream ss;
 	ss << std::endl;
-	ss << "~~~~" << getFrameLen() << std::endl;
+	ss << "FPS: " << fps << std::endl;
 	for (Playlist *p: playlists)
 	{
 		ss << *p;
@@ -519,7 +523,7 @@ FeatureList *Project::generateFeatureList() const
 
 Player *Project::createPlayer(demux_t *demux) const
 {
-	Player *player = new Player(demux, generateFeatureList());
+	Player *player = new Player(demux, generateFeatureList(), fps);
 	for (const Entry &entry: mainPlaylist->getEntries())
 	{
 		player->addFile(entry.getInterval(), entry.getResource());

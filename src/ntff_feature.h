@@ -7,19 +7,22 @@
 #include <map>
 #include <set>
 #include <list>
+#include <math.h>
 #include <vlc_common.h>
 
 namespace Ntff {
 
+using frame_id = int64_t;
+
 struct Interval
 {
 	Interval(): in(0), out(0){}
-	Interval(mtime_t in, mtime_t out, int intensity = 0) : in(in), out(out), intensity(intensity) {}
-	bool contains(mtime_t time) const { return time >= in && time < out; }
-	mtime_t length() const { return out - in; }
+	Interval(frame_id in, frame_id out, int intensity = 0) : in(in), out(out), intensity(intensity) {}
+	bool contains(frame_id frame) const { return frame >= in && frame < out; }
+	frame_id length() const { return out - in; }
 	
-	mtime_t in;
-	mtime_t out;
+	frame_id in;
+	frame_id out;
 	int8_t intensity;
 };
 
@@ -57,8 +60,8 @@ class FeatureList: public std::vector<Feature *>
 {
 public:
 	~FeatureList();
-	static void insertInterval(std::map<mtime_t, Interval> &container, const Interval& interval);
-	static void removeInterval(std::map<mtime_t, Interval> &container, const Interval& interval);
+	static void insertInterval(std::map<frame_id, Interval> &container, const Interval& interval);
+	static void removeInterval(std::map<frame_id, Interval> &container, const Interval& interval);
 };
 
 }

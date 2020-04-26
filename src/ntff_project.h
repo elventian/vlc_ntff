@@ -21,7 +21,6 @@ class Project
 	public:
 		Project(vlc_object_t *obj, const char *file, stream_t *stream);
 		bool isValid() const { return valid; }
-		float getFrameLen() const { return 1000000 / fps;}
 		Player *createPlayer(demux_t *demux) const;
 		
 		static int nextSibling(xml_reader_t *reader, const std::string &curNode, 
@@ -30,7 +29,7 @@ class Project
 	private:
 		static vlc_object_t *obj;
 		bool valid;
-		float fps;
+		double fps;
 		std::list<Playlist *>playlists;
 		std::list<Producer *>producers;
 		std::list<FeatureTrack *>tracks;
