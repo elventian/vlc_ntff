@@ -26,6 +26,7 @@ Player::Player(demux_t *obj, FeatureList *featureList, double fps) :
 {
 	demux_t *demuxer = (demux_t *)obj;
 	out = new OutStream(demuxer->out, this);
+	preload = new PreloadVideoStream(demuxer->out, this);
 	intervalsSelected = false;
 	length = 0;
 	curInterval = playIntervals.begin();
@@ -38,6 +39,7 @@ Player::~Player()
 {
 	delete featureList;
 	delete out;
+	delete preload;
 	delete dialog;
 	vlc_mutex_destroy(&intervalsMutex);
 	var_DelCallback( obj->obj.libvlc, "key-action", ActionEvent, this);
@@ -58,7 +60,7 @@ bool Player::isValid() const
 void Player::addFile(const Interval &interval, const std::string &filename)
 {
 	out->reuseStreams();
-	items[interval.in] = Item((vlc_object_t *)obj, interval, out->getWrapperStream(), filename);
+	items[interval.in] = Item(this, interval, out->getWrapperStream(), preload, filename);
 	length = wholeDuration = interval.out;
 	playIntervals[0] = Interval(0, wholeDuration);
 	curInterval = playIntervals.begin();
@@ -80,6 +82,22 @@ mtime_t Player::getCurOffset() const
 	}
 }
 
+void Player::prepareNextInterval()
+{
+	lockIntervals(true);
+	auto next = curInterval; next++;
+	if (next != playIntervals.end())
+	{
+		frame_id intervalBegin = next->first;
+		Item *item = getItemAt(intervalBegin);
+		if (item)
+		{
+			item->prepare(intervalBegin);
+		}
+	}
+	lockIntervals(false);
+}
+
 int Player::getFrameId(mtime_t timeInItem) const
 {
 	return round((double)(timeInItem - getCurOffset()) / getFrameLen());
@@ -97,6 +115,7 @@ void Player::setIntervalsSelected()
 	
 	msg_Dbg(obj, "Seek to %li", targetFrame);
 	seek(targetFrame, getStreamFrameByGlobal(targetFrame));
+	prepareNextInterval();
 
 	intervalsSelected = true;
 	setPause(false);
@@ -233,7 +252,7 @@ void Player::skipToCurInterval()
 	Item *item = getItemAt(interval.in);
 	if (!item) return;
 	
-	item->skip(item->globalToLocalFrame(interval.in) * getFrameLen());
+	item->skip(interval.in);
 }
 
 const Player::Item *Player::getCurItem() const
@@ -241,28 +260,35 @@ const Player::Item *Player::getCurItem() const
 	return getItemAt(getCurInterval().in);
 }
 
-Player::Item::Item(vlc_object_t *obj, const Interval &interval, 
-	es_out_t *outStream, const std::string &filename):
-	interval(interval), valid(false)
-{	
-	stream = vlc_stream_NewMRL(obj, ("file://" + filename).c_str());
-	if (!stream) { return; }
-	
-	demux = demux_New(obj, "any", filename.c_str(), stream, outStream);
-	if (!demux) { return; }
-	
+Player::Item::Item(Player *player, const Interval &interval, 
+	es_out_t *outStream, PreloadVideoStream *preloadStream, const std::string &filename):
+	player(player), interval(interval), valid(false)
+{
 	name = filename;
+	demux = createDemuxer(filename, outStream);
+	demux_t *preloadDemux = createDemuxer(filename, preloadStream->getWrapperStream());
+	preloader.setDemuxer(preloadDemux);
+	preloader.setVideoStream(preloadStream);
+	if (!demux || !preloadDemux) { return; }
 	valid = true;
 }
 
-void Player::Item::skip(mtime_t time) const
+void Player::Item::skip(frame_id globalFrame) const
 {
+	mtime_t time = globalToLocalFrame(globalFrame) * player->getFrameLen();
 	demux_Control(demux, DEMUX_SET_TIME, time, true);
 }
 
 int Player::Item::play() const
 {
 	return demux->pf_demux(demux);
+}
+
+demux_t *Player::Item::createDemuxer(const std::string &filename, es_out_t *outStream) const
+{
+	stream_t *stream = vlc_stream_NewMRL(player->getVlcObj(), ("file://" + filename).c_str());
+	if (!stream) { return nullptr; }
+	return demux_New(player->getVlcObj(), "any", filename.c_str(), stream, outStream);
 }
 
 int Player::play()
@@ -275,7 +301,7 @@ int Player::play()
 			Item &item = (*it).second;
 			item.play();
 			item.setFirstFrameOffset(out->getLastBlockTime());
-			item.skip(0);
+			item.skip(item.getInterval().in);
 		}
 		out->enableOutput();
 	}
@@ -399,7 +425,7 @@ void Player::seek(frame_id globalFrame, frame_id streamFrame)
 	Item *item = getItemAt(globalFrame);
 	if (!item) return;
 	
-	item->skip(item->globalToLocalFrame(globalFrame) * getFrameLen());
+	item->skip(globalFrame);
 	out->setTime(streamFrame * getFrameLen());
 }
 
@@ -418,6 +444,54 @@ frame_id Player::getStreamFrameByGlobal(frame_id frame) const
 void Player::setPause(bool pause) const
 {
 	var_SetInteger( obj->p_input, "state", pause? PAUSE_S: PLAYING_S);
+}
+
+vlc_object_t *print;
+void Player::Item::prepare(frame_id frame)
+{
+	mtime_t time = globalToLocalFrame(frame) * player->getFrameLen();
+	msg_Dbg(player->getVlcObj(), "Prepare frame %li (time %li)", frame, time);
+	print = player->getVlcObj();
+	preloader.load(time);
+}
+
+int Player::Item::waitPrepared()
+{
+	return preloader.wait();
+}
+
+void Preloader::load(mtime_t time)
+{
+	done = false;
+	target = time;
+	
+	auto loadFunc = [] (void *preloader)
+	{
+		((Preloader *)preloader)->loadInThread();
+		return preloader;
+	};
+	
+	vlc_clone(&thread, loadFunc, this, VLC_THREAD_PRIORITY_LOW);
+}
+
+void Preloader::loadInThread()
+{
+	stream->setTargetTime(target);
+	demux_Control(demux, DEMUX_SET_TIME, target, true);
+	
+	while (!stream->ready())
+	{
+		int res = demux->pf_demux(demux);
+		if (res != VLC_DEMUXER_SUCCESS) {return;}
+	}
+	
+	done = stream->ready();
+}
+
+bool Preloader::wait()
+{
+	vlc_join(thread, nullptr);
+	return done;
 }
 
 

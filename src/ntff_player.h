@@ -9,6 +9,7 @@
 namespace Ntff {
 
 class OutStream;
+class PreloadVideoStream;
 class Dialog;
 
 class Player
@@ -26,6 +27,7 @@ public:
 	
 	bool frameIsInPlayInterval(frame_id frame) const;
 	vlc_object_t *getVlcObj() const { return (vlc_object_t *)obj; }
+	demux_t *getDemuxer() const { return obj; }
 	double getFrameLen() const { return 1000000 / fps; }
 	int getFrameId(mtime_t timeInItem) const;
 	frame_id getCurIntervalFirstFrame() const;
@@ -44,6 +46,7 @@ private:
 	FeatureList *featureList;
 	std::map<frame_id, Item> items;
 	OutStream *out;
+	PreloadVideoStream *preload;
 	vlc_mutex_t intervalsMutex;
 	std::map<frame_id, Interval> playIntervals;
 	std::map<frame_id, Interval>::iterator curInterval;
@@ -63,28 +66,51 @@ private:
 	void seek(frame_id globalFrame, frame_id streamFrame);
 	frame_id getStreamFrameByGlobal(frame_id frame) const;
 	mtime_t getCurOffset() const;
+	void prepareNextInterval();
+};
+
+class Preloader
+{
+public:
+	void setDemuxer(demux_t *demuxer) { demux = demuxer; }
+	void setVideoStream(PreloadVideoStream *s) { stream = s; }
+	void load(mtime_t time);
+	void loadInThread();
+	bool wait();
+private:
+	demux_t *demux;
+	PreloadVideoStream *stream;
+	vlc_thread_t thread;
+	mtime_t target;
+	bool done;
 };
 
 class Player::Item
 {
 public:
 	Item(){}
-	Item(vlc_object_t *obj, const Interval &interval, es_out_t *outStream, const std::string &filename);
+	Item(Player *player, const Interval &interval, 
+		es_out_t *outStream, PreloadVideoStream *preloadStream, const std::string &filename);
+	
 	const std::string &getName() const { return name; }
 	bool isValid() const { return valid; }
-	void skip(mtime_t time) const;
+	void skip(frame_id globalFrame) const;
 	int play() const;
 	const Interval &getInterval() const { return interval; }
 	frame_id globalToLocalFrame(frame_id global) const { return global - interval.in;}
 	void setFirstFrameOffset(mtime_t offset) { firstFrameOffset = offset; }
 	mtime_t getFirstFrameOffset() const { return firstFrameOffset; }
+	void prepare(frame_id frame);
+	int waitPrepared();
 private:
+	Player *player;
 	Interval interval;
-	stream_t *stream;
 	demux_t *demux;
 	bool valid;
 	std::string name;
 	mtime_t firstFrameOffset; //if videofile has B-frames, first frame will have pts != 0
+	Preloader preloader;
+	demux_t *createDemuxer(const std::string &filename, es_out_t *outStream) const;
 };
 
 }

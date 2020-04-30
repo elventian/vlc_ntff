@@ -333,7 +333,7 @@ Dialog::Dialog(Player *player, const FeatureList *featureList) :
 	int row = 0;
 	
 	widgets.push_back(new Label(dialog, "First", row, 0));
-	beginAction = new UserAction(dialog, UserAction::Add, row, 1);
+	beginAction = new UserAction(dialog, UserAction::Remove, row, 1);
 	widgets.push_back(beginAction);
 	widgets.push_back(new Label(dialog, "everything", row, 2));
 	
