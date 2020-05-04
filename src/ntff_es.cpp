@@ -8,9 +8,28 @@
 using atomic_bool = bool;
 #include <input/input_internal.h>
 
+
 #define BLOCK_FLAG_PRIVATE_SKIP_VIDEOBLOCK (5 << BLOCK_FLAG_PRIVATE_SHIFT)
 
-struct es_out_pgrm_t;
+struct input_clock_t;
+#include <input/decoder.h>
+typedef struct
+{
+    /* Program ID */
+    int i_id;
+
+    /* Number of es for this pgrm */
+    int i_es;
+
+    bool b_selected;
+    bool b_scrambled;
+
+    /* Clock for this program */
+    input_clock_t *p_clock;
+
+    vlc_meta_t *p_meta;
+} es_out_pgrm_t;
+
 struct es_out_id_t
 {
     /* ES ID */
@@ -182,7 +201,7 @@ int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 			mtime_t time = updateTime();
 			es_out_Control(out, ES_OUT_SET_PCR, time);
 			
-			//msg_Dbg(player->getVlcObj(), "sendBlock blockTime = %li, curFrameId = %li", blockTime, curFrameId);
+			msg_Dbg(player->getVlcObj(), "sendBlock blockTime = %li, curFrameId = %li", blockTime, curFrameId);
 		}
 	}
 	else
@@ -195,7 +214,7 @@ int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 		{
 			block->i_pts = getTime() + frameInInterval;
 			block->i_flags |= BLOCK_FLAG_PRIVATE_SKIP_VIDEOBLOCK;
-			//msg_Dbg(player->getVlcObj(), "sendBlock blockTime = %li, curFrameId = %li SKIP", blockTime, curFrameId);
+			msg_Dbg(player->getVlcObj(), "sendBlock blockTime = %li, curFrameId = %li SKIP", blockTime, curFrameId);
 		}
 	}
 	
@@ -274,6 +293,7 @@ PreloadVideoStream::PreloadVideoStream(es_out_t *out, Player *player) : BaseStre
 	wrapper.pf_destroy = [](es_out_t *) {};
 }
 
+#include <vlc_es.h>
 es_out_id_t *PreloadVideoStream::addElemental(const es_format_t *format)
 {
 	EStreamType type = EStreamCollection::typeByVlcFormat(format);
@@ -286,11 +306,21 @@ es_out_id_t *PreloadVideoStream::addElemental(const es_format_t *format)
 			input_DecoderNew( input_thread_t *, es_format_t *, input_clock_t *,
 			sout_instance_t * )*/
 			//int current = var_GetInteger(player->getDemuxer()->p_input, "video-es");
-			decoder = input_DecoderCreate(player->getVlcObj(), format, input_priv(player->getDemuxer()->p_input)->p_resource);
+			//decoder = input_DecoderCreate(player->getVlcObj(), format, input_priv(player->getDemuxer()->p_input)->p_resource);
+			//decoder = input_DecoderCreate(player->getVlcObj(), format, input_resource_New(player->getVlcObj()));
+			decoder = input_DecoderCreate(player->getVlcObj(), format, nullptr);
+			
+			
+			//input_thread_t *p_input = player->getDemuxer()->p_input;
+			//decoder = input_DecoderNew( p_input, format, videoStream->p_pgrm->p_clock, input_priv(p_input)->p_sout);
 			//es_out_Control(out, ES_OUT_SET_ES_DEFAULT, videoStream);
 			//decoder = videoStream->p_dec;
 			//videoStream->p_dec = nullptr;
 			decoder->pf_queue_video = []( decoder_t *, picture_t * ) { return 0; }; //disable video output
+			decoder->pf_vout_format_update = []( decoder_t * ) { return 0; };
+			decoder->pf_vout_buffer_new = [] (decoder_t *dec) {
+				return picture_NewFromFormat(&dec->fmt_out.video);
+			};
 		}
 		msg_Dbg(player->getVlcObj(), "PreloadVideoStream create dec = 0x%lx", (long int)decoder);
 		//es_out_Control(out, ES_OUT_SET_ES, videoStream);
@@ -352,7 +382,7 @@ int PreloadVideoStream::sendBlock(es_out_id_t *streamId, block_t *block)
 		if (curFrameId >= targetFrame - 1) { done = true; msg_Dbg(player->getVlcObj(), "PreloadVideoStream DONE");}
 		else 
 		{
-			msg_Dbg(player->getVlcObj(), "PreloadVideoStream PROCESS block 0x%lx frame id = %li, target = %li", block, curFrameId, targetFrame);
+			msg_Dbg(player->getVlcObj(), "PreloadVideoStream PROCESS block 0x%lx frame id = %li, target = %li", (unsigned long) block, curFrameId, targetFrame);
 			block->i_flags |= BLOCK_FLAG_PRIVATE_SKIP_VIDEOBLOCK;
 			block->i_pts = 42;
 			int res = decoder->pf_decode(decoder, block);

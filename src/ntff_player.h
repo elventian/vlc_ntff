@@ -63,6 +63,7 @@ private:
 	Item *getItemAt(frame_id frame);
 	const Item *getItemAt(frame_id frame) const;
 	Interval getCurInterval() const;
+	Interval getNextInterval() const;
 	void seek(frame_id globalFrame, frame_id streamFrame);
 	frame_id getStreamFrameByGlobal(frame_id frame) const;
 	mtime_t getCurOffset() const;
@@ -73,6 +74,7 @@ class Preloader
 {
 public:
 	void setDemuxer(demux_t *demuxer) { demux = demuxer; }
+	demux_t *getDemuxer() const { return demux; }
 	void setVideoStream(PreloadVideoStream *s) { stream = s; }
 	void load(mtime_t time);
 	void loadInThread();
@@ -102,6 +104,7 @@ public:
 	mtime_t getFirstFrameOffset() const { return firstFrameOffset; }
 	void prepare(frame_id frame);
 	int waitPrepared();
+	void applyPrepared();
 private:
 	Player *player;
 	Interval interval;

@@ -7,6 +7,46 @@
 #include <vlc_actions.h>
 #include <vlc_input.h>
 #include <vlc_threads.h>
+#include <vlc_codec.h>
+#include <vlc_block.h>
+#include <utility>
+using namespace std;
+#include <atomic>
+struct input_clock_t;
+struct decoder_owner_sys_t
+{
+    input_thread_t  *p_input;
+    input_resource_t*p_resource;
+    input_clock_t   *p_clock;
+    int             i_last_rate;
+
+    vout_thread_t   *p_spu_vout;
+    int              i_spu_channel;
+    int64_t          i_spu_order;
+
+    sout_instance_t         *p_sout;
+    sout_packetizer_input_t *p_sout_input;
+
+    vlc_thread_t     thread;
+
+    void (*pf_update_stat)( decoder_owner_sys_t *, unsigned decoded, unsigned lost );
+
+    /* Some decoders require already packetized data (ie. not truncated) */
+    decoder_t *p_packetizer;
+    bool b_packetizer;
+
+    /* Current format in use by the output */
+    es_format_t    fmt;
+
+    /* */
+    bool           b_fmt_description;
+    vlc_meta_t     *p_description;
+    atomic_int     reload;
+
+    /* fifo */
+    block_fifo_t *p_fifo;
+	/* not interested in next members*/
+};
 
 namespace Ntff {
 
@@ -84,18 +124,11 @@ mtime_t Player::getCurOffset() const
 
 void Player::prepareNextInterval()
 {
-	lockIntervals(true);
-	auto next = curInterval; next++;
-	if (next != playIntervals.end())
+	Interval nextInterval = getNextInterval();
+	if (nextInterval.length() > 0)
 	{
-		frame_id intervalBegin = next->first;
-		Item *item = getItemAt(intervalBegin);
-		if (item)
-		{
-			item->prepare(intervalBegin);
-		}
+		getItemAt(nextInterval.in)->prepare(nextInterval.in);
 	}
-	lockIntervals(false);
 }
 
 int Player::getFrameId(mtime_t timeInItem) const
@@ -246,6 +279,16 @@ Interval Player::getCurInterval() const
 	return curInterval->second;
 }
 
+Interval Player::getNextInterval() const
+{
+	auto next = curInterval; next++;
+	if (next != playIntervals.end())
+	{
+		return next->second;
+	}
+	return Interval();
+}
+
 void Player::skipToCurInterval()
 {
 	Interval interval = getCurInterval();
@@ -312,26 +355,50 @@ int Player::play()
 	else
 	{
 		vlc_mutex_lock(&intervalsMutex);
+		//decoder_owner_sys_t *p_owner = p_dec->p_owner;
 	
 		if (getCurInterval().length() <= out->getHandledFrameNum()) //interval handled, seek to next
 		{
-			curInterval++;
-			if (curInterval == playIntervals.end()) { res = VLC_DEMUXER_EOF; }
-			else 
+			Interval next = getNextInterval();
+			if (next.length() == 0) { res = VLC_DEMUXER_EOF; }
+			else
 			{
-				out->resetFramesNum();
-				skipToCurInterval();
-				msg_Dbg(obj, "Player next interval: %li", (*curInterval).first);
+				int currentVideoTrack = var_GetInteger(obj->p_input, "video-es");
+				decoder_t *videoDecoder;
+				input_GetEsObjects(obj->p_input, currentVideoTrack, (vlc_object_t **)&videoDecoder, nullptr, nullptr);
+				block_fifo_t *blockQueue = videoDecoder->p_owner->p_fifo;
+				vlc_fifo_Lock(blockQueue);
+				int queueSize = vlc_fifo_GetCount(blockQueue);
+				vlc_fifo_Unlock(blockQueue);
+				msg_Dbg(obj, "Player fifo size = %i", queueSize);
+				
+				if (queueSize > 0) { res = VLC_DEMUXER_SUCCESS; }
+				else
+				{
+					Item *nextItem = getItemAt(next.in);
+					nextItem->waitPrepared();
+					curInterval++;
+					out->resetFramesNum();
+					decoder_t *preloadDecoder = preload->getDecoder();
+					//std::swap(videoDecoder->p_sys, preloadDecoder->p_sys);
+					//nextItem->applyPrepared();
+					res = VLC_DEMUXER_SUCCESS;
+					skipToCurInterval();
+					msg_Dbg(obj, "Player next interval: %li", (*curInterval).first);
+				}
+				vlc_object_release(videoDecoder);
 			}
 		}
-		
-		const Item *item = getCurItem();
-		if (!item) { res = VLC_DEMUXER_EOF; }
-		if (res != VLC_DEMUXER_EOF)
+		else 
 		{
-			res = item->play();
-		}
-		
+			const Item *item = getCurItem();
+			if (!item) { res = VLC_DEMUXER_EOF; }
+			if (res != VLC_DEMUXER_EOF)
+			{
+				//msg_Dbg(obj, "Play");
+				res = item->play();
+			}
+		}		
 		vlc_mutex_unlock(&intervalsMutex);
 	}
 	return res;
@@ -460,22 +527,33 @@ int Player::Item::waitPrepared()
 	return preloader.wait();
 }
 
+void Player::Item::applyPrepared()
+{
+	demux_sys_t *sys = demux->p_sys;
+	demux->p_sys = preloader.getDemuxer()->p_sys;
+	preloader.getDemuxer()->p_sys = sys;
+}
+
 void Preloader::load(mtime_t time)
 {
 	done = false;
 	target = time;
 	
-	auto loadFunc = [] (void *preloader)
+	auto loadFunc = [] (void *preloader) -> void *
 	{
 		((Preloader *)preloader)->loadInThread();
-		return preloader;
+		return nullptr;
 	};
 	
-	vlc_clone(&thread, loadFunc, this, VLC_THREAD_PRIORITY_LOW);
+	int res = vlc_clone(&thread, loadFunc, this, VLC_THREAD_PRIORITY_LOW);
+	if (res != 0) { done = true; }
 }
-
+#include <time.h>
 void Preloader::loadInThread()
 {
+	timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	double timestamp = ts.tv_sec * 1000.0 + ts.tv_nsec / 1000000.0;
 	stream->setTargetTime(target);
 	demux_Control(demux, DEMUX_SET_TIME, target, true);
 	
@@ -486,6 +564,9 @@ void Preloader::loadInThread()
 	}
 	
 	done = stream->ready();
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	double timestamp2 = ts.tv_sec * 1000.0 + ts.tv_nsec / 1000000.0;
+	msg_Dbg(print, "Done in %f msec", timestamp2 - timestamp);
 }
 
 bool Preloader::wait()

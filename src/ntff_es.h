@@ -84,6 +84,7 @@ public:
 	int control(int i_query, va_list va);
 	void setTargetTime(mtime_t time);
 	bool ready() const { return done; }
+	decoder_t *getDecoder() const { return decoder; }
 private:
 	es_out_id_t *videoStream;
 	decoder_t *decoder;
