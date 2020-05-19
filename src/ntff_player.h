@@ -41,6 +41,8 @@ public:
 	void modifyIntervals(bool add, const Feature *f, int8_t minIntensity, int8_t maxIntensity, bool affectUnmarked);
 	void recalcLength();
 	void updateCurrentInterval();
+	frame_id getStreamLengthTo(frame_id targetFrame) const;
+	decoder_t *getVideoDecoder() const;
 private:
 	demux_t *obj;
 	FeatureList *featureList;

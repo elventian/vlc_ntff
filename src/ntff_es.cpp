@@ -113,7 +113,7 @@ void OutStream::setTime(mtime_t time)
 	es_out_Control(out, ES_OUT_RESET_PCR);
 }
 
-frame_id OutStream::getHandledFrameNum() const
+frame_id OutStream::getHandledFrameId() const
 {
 	if (framesQueue.empty()) return 0;
 	else return *framesQueue.begin();
@@ -201,7 +201,7 @@ int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 			mtime_t time = updateTime();
 			es_out_Control(out, ES_OUT_SET_PCR, time);
 			
-			msg_Dbg(player->getVlcObj(), "sendBlock blockTime = %li, curFrameId = %li", blockTime, curFrameId);
+			msg_Dbg(player->getVlcObj(), "sendBlock dts = %li, curFrameId = %li", block->i_dts, curFrameId);
 		}
 	}
 	else
@@ -214,7 +214,7 @@ int OutStream::sendBlock(es_out_id_t *streamId, block_t *block)
 		{
 			block->i_pts = getTime() + frameInInterval;
 			block->i_flags |= BLOCK_FLAG_PRIVATE_SKIP_VIDEOBLOCK;
-			msg_Dbg(player->getVlcObj(), "sendBlock blockTime = %li, curFrameId = %li SKIP", blockTime, curFrameId);
+			msg_Dbg(player->getVlcObj(), "sendBlock dts = %li, curFrameId = %li SKIP", block->i_dts, curFrameId);
 		}
 	}
 	
@@ -271,7 +271,8 @@ EStreamType EStreamCollection::typeByVlcFormat(const es_format_t *format)
 	}
 }
 
-PreloadVideoStream::PreloadVideoStream(es_out_t *out, Player *player) : BaseStream(out, player)
+PreloadVideoStream::PreloadVideoStream(es_out_t *demuxOut, Player *player, OutStream *outStream) : 
+	BaseStream(demuxOut, player), outStream(outStream)
 {
 	videoStream = nullptr;
 	wrapper.p_sys = (es_out_sys_t *)this;
@@ -297,10 +298,11 @@ PreloadVideoStream::PreloadVideoStream(es_out_t *out, Player *player) : BaseStre
 es_out_id_t *PreloadVideoStream::addElemental(const es_format_t *format)
 {
 	EStreamType type = EStreamCollection::typeByVlcFormat(format);
+	outStream->reuseStreams();
 	if (type == Video)
 	{
 		if (!videoStream) {
-			videoStream = out->pf_add(out, format); 
+			videoStream = outStream->addElemental(format);
 			
 			/*input_DecoderNew( p_input, &p_es->fmt, p_es->p_pgrm->p_clock, input_priv(p_input)->p_sout );
 			input_DecoderNew( input_thread_t *, es_format_t *, input_clock_t *,
@@ -326,7 +328,7 @@ es_out_id_t *PreloadVideoStream::addElemental(const es_format_t *format)
 		//es_out_Control(out, ES_OUT_SET_ES, videoStream);
 		return videoStream;
 	}
-	else return out->pf_add(out, format);
+	else return outStream->addElemental(format);
 }
 
 struct AVCodecContext;
@@ -380,15 +382,13 @@ int PreloadVideoStream::sendBlock(es_out_id_t *streamId, block_t *block)
 		mtime_t blockTime = (block->i_pts == 0) ? block->i_dts : block->i_pts;
 		frame_id curFrameId = player->getFrameId(blockTime);
 		if (curFrameId >= targetFrame - 1) { done = true; msg_Dbg(player->getVlcObj(), "PreloadVideoStream DONE");}
-		else 
-		{
-			msg_Dbg(player->getVlcObj(), "PreloadVideoStream PROCESS block 0x%lx frame id = %li, target = %li", (unsigned long) block, curFrameId, targetFrame);
-			block->i_flags |= BLOCK_FLAG_PRIVATE_SKIP_VIDEOBLOCK;
-			block->i_pts = 42;
-			int res = decoder->pf_decode(decoder, block);
-			//((decoder_sys_tt *)decoder->p_sys)->pts.date
-			msg_Dbg(player->getVlcObj(), "PreloadVideoStream decode res = %s",  (res == 0? "ok":"error"));
-		}
+		msg_Dbg(player->getVlcObj(), "PreloadVideoStream PROCESS block 0x%lx frame id = %li, target = %li", (unsigned long) block, curFrameId, targetFrame);
+		block->i_flags |= BLOCK_FLAG_PRIVATE_SKIP_VIDEOBLOCK;
+		block->i_pts = 0;
+		block->i_dts = firstTimestamp - (targetFrame - curFrameId);
+		int res = decoder->pf_decode(decoder, block);
+		//((decoder_sys_tt *)decoder->p_sys)->pts.date
+		msg_Dbg(player->getVlcObj(), "PreloadVideoStream decode dts = %li, res = %s",  firstTimestamp - (targetFrame - curFrameId), (res == 0? "ok":"error"));
 	}
 	else {
 		msg_Dbg(player->getVlcObj(), "PreloadVideoStream discard stream");
@@ -420,6 +420,8 @@ int PreloadVideoStream::control(int i_query, va_list va)
 void PreloadVideoStream::setTargetTime(mtime_t time) 
 {
 	targetFrame = player->getFrameId(time);
+	firstTimestamp = player->getStreamLengthTo(targetFrame) * player->getFrameLen();
+	msg_Dbg(player->getVlcObj(), "PreloadVideoStream firstTimestamp %li", firstTimestamp);
 	done = false;
 }
 

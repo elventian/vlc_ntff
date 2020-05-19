@@ -55,7 +55,7 @@ public:
 	void setTime(mtime_t time);
 	mtime_t getTime() const { return curTime; }
 	mtime_t getLastBlockTime() const { return lastBlockTime; }
-	frame_id getHandledFrameNum() const;
+	frame_id getHandledFrameId() const;
 	void reuseStreams() { streams.reuse(); }
 	
 	es_out_id_t *addElemental(const es_format_t *format);
@@ -77,7 +77,7 @@ private:
 class PreloadVideoStream: public BaseStream
 {
 public:
-	PreloadVideoStream(es_out_t *out, Player *player);
+	PreloadVideoStream(es_out_t *demuxOut, Player *player, OutStream *outStream);
 	
 	es_out_id_t *addElemental(const es_format_t *format);
 	int sendBlock(es_out_id_t *streamId, block_t *block);
@@ -89,7 +89,9 @@ private:
 	es_out_id_t *videoStream;
 	decoder_t *decoder;
 	frame_id targetFrame;
+	mtime_t firstTimestamp;
 	bool done;
+	OutStream *outStream;
 };
 
 }

@@ -66,7 +66,7 @@ Player::Player(demux_t *obj, FeatureList *featureList, double fps) :
 {
 	demux_t *demuxer = (demux_t *)obj;
 	out = new OutStream(demuxer->out, this);
-	preload = new PreloadVideoStream(demuxer->out, this);
+	preload = new PreloadVideoStream(demuxer->out, this, out);
 	intervalsSelected = false;
 	length = 0;
 	curInterval = playIntervals.begin();
@@ -169,7 +169,7 @@ void Player::hideDialog()
 
 frame_id Player::getGlobalFrame() const
 {
-	return getCurInterval().in + out->getHandledFrameNum();
+	return getCurInterval().in + out->getHandledFrameId();
 }
 
 void Player::lockIntervals(bool lock)
@@ -249,6 +249,25 @@ void Player::updateCurrentInterval()
 		curInterval = closestIt;
 	}
 	else { curInterval = playIntervals.begin(); }
+}
+
+frame_id Player::getStreamLengthTo(frame_id targetFrame) const
+{
+	frame_id res = 0;
+	for (auto &p: playIntervals)
+	{
+		if (p.first >= targetFrame) return res;
+		res += p.second.length();
+	}
+	return res;
+}
+
+decoder_t *Player::getVideoDecoder() const
+{
+	int currentVideoTrack = var_GetInteger(obj->p_input, "video-es");
+	decoder_t *videoDecoder;
+	input_GetEsObjects(obj->p_input, currentVideoTrack, (vlc_object_t **)&videoDecoder, nullptr, nullptr);
+	return videoDecoder;
 }
 
 Player::Item *Player::getItemAt(frame_id frame)
@@ -357,20 +376,19 @@ int Player::play()
 		vlc_mutex_lock(&intervalsMutex);
 		//decoder_owner_sys_t *p_owner = p_dec->p_owner;
 	
-		if (getCurInterval().length() <= out->getHandledFrameNum()) //interval handled, seek to next
+		if (getCurInterval().length() <= out->getHandledFrameId()) //interval handled, seek to next
 		{
 			Interval next = getNextInterval();
 			if (next.length() == 0) { res = VLC_DEMUXER_EOF; }
 			else
 			{
-				int currentVideoTrack = var_GetInteger(obj->p_input, "video-es");
-				decoder_t *videoDecoder;
-				input_GetEsObjects(obj->p_input, currentVideoTrack, (vlc_object_t **)&videoDecoder, nullptr, nullptr);
+				decoder_t *videoDecoder = getVideoDecoder();
+				//bool fifoIsEmpty = input_DecoderIsEmpty(videoDecoder);
 				block_fifo_t *blockQueue = videoDecoder->p_owner->p_fifo;
 				vlc_fifo_Lock(blockQueue);
 				int queueSize = vlc_fifo_GetCount(blockQueue);
 				vlc_fifo_Unlock(blockQueue);
-				msg_Dbg(obj, "Player fifo size = %i", queueSize);
+				//msg_Dbg(obj, "Player fifo size = %i", queueSize);
 				
 				if (queueSize > 0) { res = VLC_DEMUXER_SUCCESS; }
 				else
@@ -380,11 +398,12 @@ int Player::play()
 					curInterval++;
 					out->resetFramesNum();
 					decoder_t *preloadDecoder = preload->getDecoder();
-					//std::swap(videoDecoder->p_sys, preloadDecoder->p_sys);
-					//nextItem->applyPrepared();
+					std::swap(videoDecoder->p_sys, preloadDecoder->p_sys);
+					nextItem->applyPrepared();
 					res = VLC_DEMUXER_SUCCESS;
-					skipToCurInterval();
+					//skipToCurInterval();
 					msg_Dbg(obj, "Player next interval: %li", (*curInterval).first);
+					msg_Dbg(obj, "Player dec: 0x%lx", (long unsigned)videoDecoder);
 				}
 				vlc_object_release(videoDecoder);
 			}
